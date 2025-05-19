@@ -10,8 +10,10 @@ class TCPClientManager: ObservableObject {
     @Published var receivedMessages: [String] = []
     
     func connect(to host: String, port: UInt16) {
+        let params = NWParameters.tcp
+        params.requiredInterfaceType = .other
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(integerLiteral: port))
-        connection = NWConnection(to: endpoint, using: .tcp)
+        connection = NWConnection(to: endpoint, using: params)
         
         connection?.stateUpdateHandler = { [weak self] state in
             DispatchQueue.main.async {

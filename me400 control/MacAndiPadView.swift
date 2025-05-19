@@ -1,4 +1,5 @@
 import SwiftUI
+import Network
 
 struct LeftDrawingView: View {
     var pitchAngle: Double? // in degrees
@@ -317,6 +318,10 @@ struct MacAndiPadView: View {
     @State private var launchThresholdEpsilon: Double = 0.01
     @State private var isLaunchPressed: Bool = false
     @State private var recentBboxCenters: [(x: Double, y: Double)] = []
+    @State private var pingStatus: String = ""
+    @State private var isPinging: Bool = false
+    @State private var isAutoPinging: Bool = false
+    @State private var autoPingTimer: Timer? = nil
     
     static let decimalFormatter: NumberFormatter = {
         let f = NumberFormatter()
@@ -657,29 +662,29 @@ struct MacAndiPadView: View {
                         HStack(spacing: 16) {
                             Text("Launch Threshold")
                                 .font(.headline)
-                                HStack(spacing: 4) {
-                                    Text("N")
-                                    Stepper("", value: $launchThresholdN, in: 1...100)
-                                        .labelsHidden()
-                                    TextField("", value: $launchThresholdN, formatter: NumberFormatter())
-                                        .frame(width: 60)
-                                        .multilineTextAlignment(.center)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                }
-                                HStack(spacing: 4) {
-                                    Text("Epsilon")
-                                    Stepper("", value: $launchThresholdEpsilon, in: 0.0...1.0, step: 0.01)
-                                        .labelsHidden()
-                                    TextField("", value: $launchThresholdEpsilon, formatter: Self.decimalFormatter)
-                                        .frame(width: 80)
-                                        .multilineTextAlignment(.center)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                }
-                                Button("Send") {
-                                    _ = tcpManager.send(DataPacket.setLaunchThreshold(eps: launchThresholdEpsilon, n: UInt8(launchThresholdN)))
-                                }
-                                .buttonStyle(.borderedProminent)
+                            HStack(spacing: 4) {
+                                Text("N")
+                                Stepper("", value: $launchThresholdN, in: 1...100)
+                                    .labelsHidden()
+                                TextField("", value: $launchThresholdN, formatter: NumberFormatter())
+                                    .frame(width: 60)
+                                    .multilineTextAlignment(.center)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
                             }
+                            HStack(spacing: 4) {
+                                Text("Epsilon")
+                                Stepper("", value: $launchThresholdEpsilon, in: 0.0...1.0, step: 0.01)
+                                    .labelsHidden()
+                                TextField("", value: $launchThresholdEpsilon, formatter: Self.decimalFormatter)
+                                    .frame(width: 80)
+                                    .multilineTextAlignment(.center)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                            }
+                            Button("Send") {
+                                _ = tcpManager.send(DataPacket.setLaunchThreshold(eps: launchThresholdEpsilon, n: UInt8(launchThresholdN)))
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
                         .padding(.horizontal)
                         // Example text
                         Text("blablabla")
@@ -744,7 +749,77 @@ struct MacAndiPadView: View {
                                 .tint(.blue)
                             }
                         }
-                        
+                        // Pinging feature in its own section
+                        Section(header: Text("Ping Test")) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Toggle(isOn: $isAutoPinging) {
+                                    Text("Auto Ping")
+                                }
+                                .onChange(of: isAutoPinging) { value in
+                                    if value {
+                                        startAutoPing()
+                                    } else {
+                                        autoPingTimer?.invalidate()
+                                        autoPingTimer = nil
+                                    }
+                                }
+                                .padding(.bottom, 4)
+                                Button(action: {
+                                    pingStatus = ""
+                                    isPinging = true
+                                    let host = settingsManager.serverIP
+                                    guard let port = UInt16(settingsManager.serverPort) else {
+                                        pingStatus = "Invalid port"
+                                        isPinging = false
+                                        return
+                                    }
+                                    let params = NWParameters.tcp
+                                    let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(integerLiteral: port))
+                                    let pingConnection = NWConnection(to: endpoint, using: params)
+                                    let start = Date()
+                                    var didRespond = false
+                                    pingConnection.stateUpdateHandler = { state in
+                                        DispatchQueue.main.async {
+                                            switch state {
+                                            case .ready:
+                                                let latency = Date().timeIntervalSince(start)
+                                                pingStatus = String(format: "Ping success (%.0f ms)", latency * 1000)
+                                                pingConnection.cancel()
+                                                isPinging = false
+                                                didRespond = true
+                                            case .failed(_):
+                                                pingStatus = "Ping failed"
+                                                pingConnection.cancel()
+                                                isPinging = false
+                                                didRespond = true
+                                            default:
+                                                break
+                                            }
+                                        }
+                                    }
+                                    pingConnection.start(queue: .main)
+                                    // Timeout after 0.5 second
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                        if !didRespond {
+                                            pingStatus = "Ping failed"
+                                            pingConnection.cancel()
+                                            isPinging = false
+                                        }
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                        Text(isPinging ? "Pinging..." : "Ping")
+                                    }
+                                }
+                                .disabled(isPinging)
+                                if !pingStatus.isEmpty {
+                                    Text(pingStatus)
+                                        .font(.caption)
+                                        .foregroundColor(pingStatus.contains("success") ? .green : .red)
+                                }
+                            }
+                        }
                         Section(header: Text("Received Messages")) {
                             ScrollView {
                                 LazyVStack(alignment: .leading, spacing: 8) {
@@ -829,6 +904,56 @@ struct MacAndiPadView: View {
     
     private func sendOffset() {
         _ = tcpManager.send(DataPacket.setOffset(x: xOffset, y: yOffset))
+    }
+    
+    func startAutoPing() {
+        autoPingTimer?.invalidate()
+        autoPingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if !isPinging {
+                // Trigger the same ping logic as the button
+                pingStatus = ""
+                isPinging = true
+                let host = settingsManager.serverIP
+                guard let port = UInt16(settingsManager.serverPort) else {
+                    pingStatus = "Invalid port"
+                    isPinging = false
+                    return
+                }
+                let params = NWParameters.tcp
+                let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(integerLiteral: port))
+                let pingConnection = NWConnection(to: endpoint, using: params)
+                let start = Date()
+                var didRespond = false
+                pingConnection.stateUpdateHandler = { state in
+                    DispatchQueue.main.async {
+                        switch state {
+                        case .ready:
+                            let latency = Date().timeIntervalSince(start)
+                            pingStatus = String(format: "Ping success (%.0f ms)", latency * 1000)
+                            pingConnection.cancel()
+                            isPinging = false
+                            didRespond = true
+                        case .failed(_):
+                            pingStatus = "Ping failed"
+                            pingConnection.cancel()
+                            isPinging = false
+                            didRespond = true
+                        default:
+                            break
+                        }
+                    }
+                }
+                pingConnection.start(queue: .main)
+                // Timeout after 0.5 second
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    if !didRespond {
+                        pingStatus = "Ping failed"
+                        pingConnection.cancel()
+                        isPinging = false
+                    }
+                }
+            }
+        }
     }
 }
 
