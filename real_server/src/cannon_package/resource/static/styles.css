@@ -1,0 +1,96 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+    height: 100vh; /* Full height of viewport */
+    display: flex;
+    justify-content: center;
+    align-items: center; /* Centers content vertically */
+}
+
+.horizontal-container {
+    display: flex;
+    justify-content: center;
+    align-items: center; /* Centers elements vertically */
+    gap: 40px;  /* Increased gap for more spacing between squares */
+    flex-wrap: wrap; /* Allows wrapping on smaller screens */
+    width: 100%;
+}
+
+.container {
+    width: 320px;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.input-group {
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.input-group label {
+    font-weight: bold;
+}
+
+input {
+    width: 120px;
+    padding: 6px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    text-align: center;
+}
+
+button {
+    width: 140px;
+    background-color: #007BFF;
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 16px;
+    margin-top: 10px;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+.reset-btn {
+    background-color: #dc3545;
+    margin-left: 10px;
+}
+
+.reset-btn:hover {
+    background-color: #b02a37;
+}
+
+/* Align buttons in a row if needed */
+.button-group {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+/* Status messages for each section */
+#status_pitch_pid,
+#status_yaw_pid,
+#status_params {
+    margin-top: 10px;
+    font-weight: bold;
+    font-size: 14px;
+}

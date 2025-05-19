@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PID Controller</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script>
+    function sendPID(kp, ki, kd, controller) {
+      fetch("/set_pid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kp: kp, ki: ki, kd: kd, controller: controller })
+      })
+      .then(response => response.json())
+      .then(data => {
+        let statusElement = document.getElementById("status_" + controller + "_pid");
+        statusElement.innerText = "PID Updated Successfully!";
+        statusElement.style.color = "green";
+
+        // Update the input fields with the new values
+        document.getElementById(controller + "_kp").value = kp;
+        document.getElementById(controller + "_ki").value = ki;
+        document.getElementById(controller + "_kd").value = kd;
+
+        // Message disappears after 1 second
+        setTimeout(() => {
+          statusElement.innerText = "";
+        }, 1000);
+      })
+      .catch(error => {
+        console.error("Error:", error);
+        let statusElement = document.getElementById("status_" + controller + "_pid");
+        statusElement.innerText = "Error updating PID!";
+        statusElement.style.color = "red";
+        setTimeout(() => {
+          statusElement.innerText = "";
+        }, 3000);
+      });
+    }
+
+    function updatePID(controller) {
+      let kp = document.getElementById(controller + "_kp").value;
+      let ki = document.getElementById(controller + "_ki").value;
+      let kd = document.getElementById(controller + "_kd").value;
+      sendPID(kp, ki, kd, controller);
+    }
+
+    function resetPID(controller) {
+      sendPID(0.0, 0.0, 0.0, controller);
+    }
+
+    function sendParams(cutoff_freq, sampling_time, integral_limit) {
+      fetch("/set_params", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          cutoff_freq: cutoff_freq, 
+          sampling_time: sampling_time, 
+          integral_limit: integral_limit 
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        document.getElementById("status_params").innerText = "Params Updated Successfully!";
+        document.getElementById("status_params").style.color = "green";
+
+        document.getElementById("cutoff_freq").value = cutoff_freq;
+        document.getElementById("sampling_time").value = sampling_time;
+        document.getElementById("integral_limit").value = integral_limit;
+
+        setTimeout(() => {
+          document.getElementById("status_params").innerText = "";
+        }, 1000);
+      })
+      .catch(error => {
+        console.error("Error:", error);
+        document.getElementById("status_params").innerText = "Error updating params!";
+        document.getElementById("status_params").style.color = "red";
+        setTimeout(() => {
+          document.getElementById("status_params").innerText = "";
+        }, 3000);
+      });
+    }
+
+    function updateParams() {
+      let cutoff_freq = document.getElementById("cutoff_freq").value;
+      let sampling_time = document.getElementById("sampling_time").value;
+      let integral_limit = document.getElementById("integral_limit").value;
+      sendParams(cutoff_freq, sampling_time, integral_limit);
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      // Listen for Enter on any *_kp, *_ki, *_kd field
+      let pidInputs = document.querySelectorAll("input[id$='_kp'], input[id$='_ki'], input[id$='_kd']");
+      pidInputs.forEach(input => {
+        input.addEventListener("keypress", function(event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            let controller = input.id.split("_")[0];  // now "pitch" or "yaw"
+            updatePID(controller);
+          }
+        });
+      });
+      
+      // Enter on params fields
+      let paramsInputs = document.querySelectorAll("#cutoff_freq, #sampling_time, #integral_limit");
+      paramsInputs.forEach(input => {
+        input.addEventListener("keypress", function(event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            updateParams();
+          }
+        });
+      });
+    });
+  </script>
+</head>
+<body>
+  <!-- Pitch PID Section -->
+  <div class="container" id="pitch_pid_container">
+    <h2>Pitch PID Gains</h2>
+    <div class="input-group">
+      <label for="pitch_kp">Kp:</label>
+      <input type="number" id="pitch_kp" step="0.1" value="{{ pid.pitch.kp }}">
+    </div>
+    <div class="input-group">
+      <label for="pitch_ki">Ki:</label>
+      <input type="number" id="pitch_ki" step="0.1" value="{{ pid.pitch.ki }}">
+    </div>
+    <div class="input-group">
+      <label for="pitch_kd">Kd:</label>
+      <input type="number" id="pitch_kd" step="0.1" value="{{ pid.pitch.kd }}">
+    </div>
+    <button onclick="updatePID('pitch')">Update Pitch PID</button>
+    <button onclick="resetPID('pitch')" class="reset-btn">Reset to 0</button>
+    <p id="status_pitch_pid"></p>
+  </div>
+
+  <!-- Yaw PID Section -->
+  <div class="container" id="yaw_pid_container">
+    <h2>Yaw PID Gains</h2>
+    <div class="input-group">
+      <label for="yaw_kp">Kp:</label>
+      <input type="number" id="yaw_kp" step="0.1" value="{{ pid.yaw.kp }}">
+    </div>
+    <div class="input-group">
+      <label for="yaw_ki">Ki:</label>
+      <input type="number" id="yaw_ki" step="0.1" value="{{ pid.yaw.ki }}">
+    </div>
+    <div class="input-group">
+      <label for="yaw_kd">Kd:</label>
+      <input type="number" id="yaw_kd" step="0.1" value="{{ pid.yaw.kd }}">
+    </div>
+    <button onclick="updatePID('yaw')">Update Yaw PID</button>
+    <button onclick="resetPID('yaw')" class="reset-btn">Reset to 0</button>
+    <p id="status_yaw_pid"></p>
+  </div>
+
+  <!-- Shared Parameters Section -->
+  <div class="container">
+    <h2>Other Parameters</h2>
+    <div class="input-group">
+      <label for="cutoff_freq">Cutoff Frequency:</label>
+      <input type="number" id="cutoff_freq" step="0.1" value="{{ params.cutoff_freq }}">
+    </div>
+    <div class="input-group">
+      <label for="sampling_time">Sampling Time:</label>
+      <input type="number" id="sampling_time" step="0.1" value="{{ params.sampling_time }}">
+    </div>
+    <div class="input-group">
+      <label for="integral_limit">Integral Limit:</label>
+      <input type="number" id="integral_limit" step="0.1" value="{{ params.integral_limit }}">
+    </div>
+    <button onclick="updateParams()">Set Params</button>
+    <p id="status_params"></p>
+  </div>
+</body>
+</html>
