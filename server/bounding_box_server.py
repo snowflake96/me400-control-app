@@ -171,6 +171,36 @@ def create_data_packet(type_value, data):
     
     return packet
 
+def create_current_state_packet(mode, state):
+    # Packet format: [type(1 byte) + payload(64 bytes)]
+    packet = bytearray(65)
+    # Set packet type to 25 (CurrentState)
+    packet[0] = 25
+    
+    # Set mode and state
+    packet[1] = mode  # 7 for autonomous, 8 for manual, 9 for autoAim
+    packet[2] = state  # 5 for running, 6 for stopped
+    
+    # Fill rest of the packet with default values
+    # launchCounter (UInt32)
+    struct.pack_into('<I', packet, 3, 0)
+    # maxConsecutiveNans (UInt32)
+    struct.pack_into('<I', packet, 7, 0)
+    # targetX (Double)
+    struct.pack_into('<d', packet, 11, 0.0)
+    # targetY (Double)
+    struct.pack_into('<d', packet, 19, 0.0)
+    # stopThrottle (Double)
+    struct.pack_into('<d', packet, 27, 0.0)
+    # motorOffset (Double)
+    struct.pack_into('<d', packet, 35, 0.0)
+    # defaultSpeed (Double)
+    struct.pack_into('<d', packet, 43, 0.0)
+    # cutoffFreq (Double)
+    struct.pack_into('<d', packet, 51, 0.0)
+    
+    return packet
+
 def main():
     # Server configuration
     HOST = '0.0.0.0'  # Listen on all available interfaces
@@ -188,20 +218,20 @@ def main():
     print(f"Connected to client at {address}")
     
     try:
-        # Wait for Query response before sending SetManual and Start
+        # Wait for Query response before sending CurrentState
         print("Waiting for Query response...")
         data = client_socket.recv(65)
         if data and data[0] == 17:  # Query response
-            print("Received Query response, sending SetManual and Start packets")
-            client_socket.send(create_set_manual_packet())
-            client_socket.send(create_start_packet())
-            print("Sent SetManual and Start packets")
+            print("Received Query response, sending CurrentState packet")
+            # Send CurrentState packet with manual mode and running state
+            client_socket.send(create_current_state_packet(8, 5))  # 8 for manual, 5 for running
+            print("Sent CurrentState packet")
         else:
             print("Received unexpected packet type")
             return
 
         packet_counter = 0  # Counter for tracking number of packets sent
-        is_running = True  # Track if the server is running
+        is_running = True
         
         while True:
             # Check for incoming data
@@ -225,6 +255,21 @@ def main():
                         print("Received START command, resuming data transmission")
                         client_socket.send(create_start_packet())  # Send start response
                         continue
+                    
+                    # Handle Query command
+                    elif data[0] == 17:  # Query command
+                        print("Received Query command, sending CurrentState packet")
+                        # Send CurrentState packet with current mode and state
+                        client_socket.send(create_current_state_packet(8, 5 if is_running else 6))  # 8 for manual, 5/6 for running/stopped
+                        continue
+                    
+                    # # Handle mode change commands
+                    # elif data[0] == 7:  # SetAutonomous
+                    #     client_socket.send(create_current_state_packet(7, 5 if is_running else 6))
+                    # elif data[0] == 8:  # SetManual
+                    #     client_socket.send(create_current_state_packet(8, 5 if is_running else 6))
+                    # elif data[0] == 9:  # SetAutoAim
+                    #     client_socket.send(create_current_state_packet(9, 5 if is_running else 6))
                     
             except socket.timeout:
                 pass  # No data received, continue with sending

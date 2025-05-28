@@ -167,6 +167,7 @@ struct CombinedSceneView: View {
                     displayLink?.invalidate()
                     displayLink = nil
                 }
+//                .frame(height:400)
             }
             
             // Left side controls
@@ -218,6 +219,22 @@ struct CombinedSceneView: View {
                         .padding()
                         .background(Color.black.opacity(0.5))
                         .cornerRadius(8)
+                    
+                    // Tilt display
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Tilt Values")
+                            .foregroundColor(.white)
+                            .font(.caption)
+                        Text("Roll: \(ServerCommunicationManager.shared.currentRoll, specifier: "%.2f")°")
+                            .foregroundColor(.cyan)
+                            .font(.caption)
+                        Text("Pitch: \(ServerCommunicationManager.shared.currentPitch, specifier: "%.2f")°")
+                            .foregroundColor(.cyan)
+                            .font(.caption)
+                    }
+                    .padding()
+                    .background(Color.black.opacity(0.5))
+                    .cornerRadius(8)
                     
                     Spacer()
                     

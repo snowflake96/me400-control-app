@@ -1,5 +1,512 @@
 import SwiftUI
 
+// MARK: - Motor Settings Components
+struct SimpleMotorOffsetRow: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    var body: some View {
+        HStack {
+            DoubleInputBox(
+                title: "Motor Offset",
+                value: Binding(
+                    get: { parameterManager.getParameter("MotorOffset", defaultValue: 0.0) },
+                    set: { parameterManager.setParameter("MotorOffset", value: $0) }
+                ),
+                minValue: -1000.0,
+                maxValue: 1000.0,
+                stepSize: 0.1,
+                format: "%.3f",
+                allowNegative: true
+            )
+            
+            Spacer()
+            
+            Button("Send") {
+                let value = parameterManager.getParameter("MotorOffset", defaultValue: 0.0)
+                _ = ServerCommunicationManager.shared.send(DataPacket.motorOffset(value))
+            }
+            .buttonStyle(.bordered)
+            .disabled(!parameterManager.serverConnected)
+        }
+        .padding(.horizontal)
+    }
+}
+
+struct SimpleStopThrottleRow: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    var body: some View {
+        HStack {
+            DoubleInputBox(
+                title: "Stop Throttle",
+                value: Binding(
+                    get: { parameterManager.getParameter("StopThrottle", defaultValue: 0.0) },
+                    set: { parameterManager.setParameter("StopThrottle", value: $0) }
+                ),
+                minValue: -1000.0,
+                maxValue: 1000.0,
+                stepSize: 0.1,
+                format: "%.3f",
+                allowNegative: true
+            )
+            
+            Spacer()
+            
+            Button("Send") {
+                let value = parameterManager.getParameter("StopThrottle", defaultValue: 0.0)
+                _ = ServerCommunicationManager.shared.send(DataPacket.setStopThrottle(value))
+            }
+            .buttonStyle(.bordered)
+            .disabled(!parameterManager.serverConnected)
+        }
+        .padding(.horizontal)
+    }
+}
+
+struct SimpleDefaultSpeedRow: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    var body: some View {
+        HStack {
+            DoubleInputBox(
+                title: "Default Speed",
+                value: Binding(
+                    get: { parameterManager.getParameter("DefaultSpeed", defaultValue: 1.0) },
+                    set: { parameterManager.setParameter("DefaultSpeed", value: $0) }
+                ),
+                minValue: -1000.0,
+                maxValue: 1000.0,
+                stepSize: 0.1,
+                format: "%.3f",
+                allowNegative: true
+            )
+            
+            Spacer()
+            
+            Button("Send") {
+                let value = parameterManager.getParameter("DefaultSpeed", defaultValue: 1.0)
+                _ = ServerCommunicationManager.shared.send(DataPacket.setDefaultSpeed(value))
+            }
+            .buttonStyle(.bordered)
+            .disabled(!parameterManager.serverConnected)
+        }
+        .padding(.horizontal)
+    }
+}
+
+struct SimpleLaunchThresholdRow: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                DoubleInputBox(
+                    title: "N (Integer)",
+                    value: Binding(
+                        get: { parameterManager.getParameter("LaunchThresholdN", defaultValue: 5.0) },
+                        set: { parameterManager.setParameter("LaunchThresholdN", value: $0) }
+                    ),
+                    minValue: 0.0,
+                    maxValue: 1000.0,
+                    stepSize: 1.0,
+                    format: "%.0f",
+                    allowNegative: false
+                )
+                
+                DoubleInputBox(
+                    title: "Epsilon",
+                    value: Binding(
+                        get: { parameterManager.getParameter("LaunchThresholdEpsilon", defaultValue: 0.005) },
+                        set: { parameterManager.setParameter("LaunchThresholdEpsilon", value: $0) }
+                    ),
+                    minValue: 0.0,
+                    maxValue: 1000.0,
+                    stepSize: 0.001,
+                    format: "%.4f",
+                    allowNegative: false
+                )
+                
+                Spacer()
+                
+                Button("Send") {
+                    let epsilon = parameterManager.getParameter("LaunchThresholdEpsilon", defaultValue: 0.005)
+                    let n = Int(parameterManager.getParameter("LaunchThresholdN", defaultValue: 5.0))
+                    _ = ServerCommunicationManager.shared.send(DataPacket.setLaunchThreshold(eps: epsilon, n: UInt8(n)))
+                }
+                .buttonStyle(.bordered)
+                .disabled(!parameterManager.serverConnected)
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Tree Settings Components
+struct PipeLocationRow: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    var body: some View {
+        DoubleInputBox(
+            title: "Location",
+            value: Binding(
+                get: { parameterManager.getParameter("PipeLocation", defaultValue: 0.0) },
+                set: { parameterManager.setParameter("PipeLocation", value: $0) }
+            )
+        )
+        .padding(.horizontal)
+    }
+}
+
+struct PipeSection: View {
+    let pipeNumber: Int
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    private var defaultValues: (xOffset: Double, yLength: Double, zOffset: Double, diameter: Double) {
+        switch pipeNumber {
+        case 1: return (0.0, 1.0, 0.0, 0.12)
+        case 2: return (0.0, 1.0, 0.0, 0.08)
+        case 3: return (0.0, 0.8, 0.0, 0.08)
+        default: return (0.0, 1.0, 0.0, 0.08)
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            DoubleInputBox(
+                title: "X Offset",
+                value: Binding(
+                    get: { parameterManager.getParameter("Pipe\(pipeNumber)XOffset", defaultValue: defaultValues.xOffset) },
+                    set: { parameterManager.setParameter("Pipe\(pipeNumber)XOffset", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Y Length",
+                value: Binding(
+                    get: { parameterManager.getParameter("Pipe\(pipeNumber)YLength", defaultValue: defaultValues.yLength) },
+                    set: { parameterManager.setParameter("Pipe\(pipeNumber)YLength", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Z Offset",
+                value: Binding(
+                    get: { parameterManager.getParameter("Pipe\(pipeNumber)ZOffset", defaultValue: defaultValues.zOffset) },
+                    set: { parameterManager.setParameter("Pipe\(pipeNumber)ZOffset", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Diameter",
+                value: Binding(
+                    get: { parameterManager.getParameter("Pipe\(pipeNumber)Diameter", defaultValue: defaultValues.diameter) },
+                    set: { parameterManager.setParameter("Pipe\(pipeNumber)Diameter", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+        }
+    }
+}
+
+struct BellSettingsSection: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            DoubleInputBox(
+                title: "Neck Length",
+                value: Binding(
+                    get: { parameterManager.getParameter("BellNeckLength", defaultValue: 0.03) },
+                    set: { parameterManager.setParameter("BellNeckLength", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Neck Diameter",
+                value: Binding(
+                    get: { parameterManager.getParameter("BellNeckDiameter", defaultValue: 0.01) },
+                    set: { parameterManager.setParameter("BellNeckDiameter", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Trigger Placement",
+                value: Binding(
+                    get: { parameterManager.getParameter("TriggerPlacement", defaultValue: 0.05) },
+                    set: { parameterManager.setParameter("TriggerPlacement", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Trigger Diameter",
+                value: Binding(
+                    get: { parameterManager.getParameter("TriggerDiameter", defaultValue: 0.03) },
+                    set: { parameterManager.setParameter("TriggerDiameter", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Cone Height",
+                value: Binding(
+                    get: { parameterManager.getParameter("BellConeHeight", defaultValue: 0.1) },
+                    set: { parameterManager.setParameter("BellConeHeight", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Cone Base Diameter",
+                value: Binding(
+                    get: { parameterManager.getParameter("BellConeBaseDiameter", defaultValue: 0.08) },
+                    set: { parameterManager.setParameter("BellConeBaseDiameter", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+        }
+    }
+}
+
+struct AluminiumSettingsSection: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            DoubleInputBox(
+                title: "X Offset",
+                value: Binding(
+                    get: { parameterManager.getParameter("AluminiumXOffset", defaultValue: 0.0) },
+                    set: { parameterManager.setParameter("AluminiumXOffset", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Y Offset",
+                value: Binding(
+                    get: { parameterManager.getParameter("AluminiumYOffset", defaultValue: 0.0) },
+                    set: { parameterManager.setParameter("AluminiumYOffset", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Z Length",
+                value: Binding(
+                    get: { parameterManager.getParameter("AluminiumZLength", defaultValue: 0.25) },
+                    set: { parameterManager.setParameter("AluminiumZLength", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+            
+            DoubleInputBox(
+                title: "Diameter",
+                value: Binding(
+                    get: { parameterManager.getParameter("AluminiumDiameter", defaultValue: 0.03) },
+                    set: { parameterManager.setParameter("AluminiumDiameter", value: $0) }
+                )
+            )
+            .padding(.horizontal)
+        }
+    }
+}
+
+struct TreeSettingsView: View {
+    @Binding var showingResetAlert: Bool
+    let saveAllParameters: () -> Void
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("Tree Settings")
+                        .font(.title)
+                    
+                    Spacer()
+                    
+                    Button(action: { showingResetAlert = true }) {
+                        Label("Reset All", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    
+                    Button(action: saveAllParameters) {
+                        Label("Save All", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal)
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Pipe Settings")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    PipeLocationRow()
+                }
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Pipe 1")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    PipeSection(pipeNumber: 1)
+                }
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Pipe 2")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    PipeSection(pipeNumber: 2)
+                }
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Pipe 3")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    PipeSection(pipeNumber: 3)
+                }
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Bell Settings")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    BellSettingsSection()
+                }
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Aluminium Settings")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    AluminiumSettingsSection()
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+}
+
+// MARK: - View Settings Components
+struct ViewSettingsView: View {
+    @ObservedObject var parameterManager = ParameterManager.shared
+    @Binding var showingResetAlert: Bool
+    let saveAllParameters: () -> Void
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("View Settings")
+                        .font(.title)
+                    
+                    Spacer()
+                    
+                    Button(action: { showingResetAlert = true }) {
+                        Label("Reset All", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    
+                    Button(action: saveAllParameters) {
+                        Label("Save All", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal)
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Display Settings")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    HStack {
+                        DoubleInputBox(
+                            title: "Set Max Consecutive NANs",
+                            value: Binding(
+                                get: { parameterManager.getParameter("MaxConsecutiveNans", defaultValue: 10.0) },
+                                set: { 
+                                    parameterManager.setParameter("MaxConsecutiveNans", value: $0)
+                                    // Send the new value to the server
+                                    _ = ServerCommunicationManager.shared.send(DataPacket.setMaxConsecutiveNans(UInt32($0)))
+                                }
+                            )
+                        )
+                        
+                        Button("Send") {
+                            let value = parameterManager.getParameter("MaxConsecutiveNans", defaultValue: 10.0)
+                            _ = ServerCommunicationManager.shared.send(DataPacket.setMaxConsecutiveNans(UInt32(value)))
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!parameterManager.serverConnected)
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+}
+
+struct MotorSettingsView: View {
+    @Binding var showingResetAlert: Bool
+    let saveAllParameters: () -> Void
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("Motor Settings")
+                        .font(.title)
+                    
+                    Spacer()
+                    
+                    Button(action: { showingResetAlert = true }) {
+                        Label("Reset All", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    
+                    Button(action: saveAllParameters) {
+                        Label("Save All", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal)
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Basic Motor Settings")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    SimpleMotorOffsetRow()
+                    SimpleStopThrottleRow()
+                    SimpleDefaultSpeedRow()
+                }
+                
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Launch Thresholds")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    SimpleLaunchThresholdRow()
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+}
+
+// MARK: - Main Settings View
 struct SettingsView: View {
     @ObservedObject private var parameterManager = ParameterManager.shared
     @State private var selectedTab = 0
@@ -18,7 +525,15 @@ struct SettingsView: View {
     // List of all parameter keys with their default values
     private let parameterDefaults: [(key: String, defaultValue: Double)] = [
         ("MotorOffset", 0.0),
+        ("MotorOffsetStepSize", 0.1),
         ("StopThrottle", 0.0),
+        ("StopThrottleStepSize", 0.1),
+        ("DefaultSpeed", 1.0),
+        ("DefaultSpeedStepSize", 0.1),
+        ("LaunchThresholdN", 5.0),
+        ("LaunchThresholdEpsilon", 0.005),
+        ("LaunchThresholdEpsilonStepSize", 0.001),
+        ("MaxConsecutiveNans", 10.0),
         ("PipeLocation", 0.0),
         ("Pipe1XOffset", 0.0),
         ("Pipe1YLength", 1.0),
@@ -101,336 +616,25 @@ struct SettingsView: View {
             .tag(0)
             
             // Motor Settings
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack {
-                        Text("Motor Settings")
-                            .font(.title)
-                        
-                        Spacer()
-                        
-                        Button(action: { showingResetAlert = true }) {
-                            Label("Reset All", systemImage: "arrow.counterclockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
-                        
-                        Button(action: saveAllParameters) {
-                            Label("Save All", systemImage: "square.and.arrow.down")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .padding(.horizontal)
-                    
-                    VStack(alignment: .leading, spacing: 15) {
-                        DoubleInputBox(
-                            title: "Motor Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("MotorOffset", defaultValue: 0.0) },
-                                set: { 
-                                    parameterManager.setParameter("MotorOffset", value: $0)
-                                    // Send the new value to the server
-                                    _ = ServerCommunicationManager.shared.send(DataPacket.motorOffset($0))
-                                }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Stop Throttle",
-                            value: Binding(
-                                get: { parameterManager.getParameter("StopThrottle", defaultValue: 0.0) },
-                                set: { 
-                                    parameterManager.setParameter("StopThrottle", value: $0)
-                                    // Send the new value to the server
-                                    _ = ServerCommunicationManager.shared.send(DataPacket.setStopThrottle($0))
-                                }
-                            )
-                        )
-                        .padding(.horizontal)
-                    }
-                }
-                .padding(.vertical)
-            }
+            MotorSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
             .tabItem {
                 Label("Motor", systemImage: "gearshape.2")
             }
             .tag(1)
             
             // Tree Settings (Combined Pipe, Bell, and Aluminium)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack {
-                        Text("Tree Settings")
-                            .font(.title)
-                        
-                        Spacer()
-                        
-                        Button(action: { showingResetAlert = true }) {
-                            Label("Reset All", systemImage: "arrow.counterclockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
-                        
-                        Button(action: saveAllParameters) {
-                            Label("Save All", systemImage: "square.and.arrow.down")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .padding(.horizontal)
-                    
-                    // Pipe Settings
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Pipe Settings")
-                            .font(.headline)
-                            .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Location",
-                            value: Binding(
-                                get: { parameterManager.getParameter("PipeLocation", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("PipeLocation", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        Text("Pipe 1")
-                            .font(.subheadline)
-                            .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "X Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe1XOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("Pipe1XOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Y Length",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe1YLength", defaultValue: 1.0) },
-                                set: { parameterManager.setParameter("Pipe1YLength", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Z Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe1ZOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("Pipe1ZOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Diameter",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe1Diameter", defaultValue: 0.12) },
-                                set: { parameterManager.setParameter("Pipe1Diameter", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        Text("Pipe 2")
-                            .font(.subheadline)
-                            .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "X Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe2XOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("Pipe2XOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Y Length",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe2YLength", defaultValue: 1.0) },
-                                set: { parameterManager.setParameter("Pipe2YLength", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Z Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe2ZOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("Pipe2ZOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Diameter",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe2Diameter", defaultValue: 0.08) },
-                                set: { parameterManager.setParameter("Pipe2Diameter", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        Text("Pipe 3")
-                            .font(.subheadline)
-                            .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "X Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe3XOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("Pipe3XOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Y Length",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe3YLength", defaultValue: 0.8) },
-                                set: { parameterManager.setParameter("Pipe3YLength", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Z Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe3ZOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("Pipe3ZOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Diameter",
-                            value: Binding(
-                                get: { parameterManager.getParameter("Pipe3Diameter", defaultValue: 0.08) },
-                                set: { parameterManager.setParameter("Pipe3Diameter", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                    }
-                    
-                    Divider()
-                        .padding(.vertical)
-                    
-                    // Bell Settings
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Bell Settings")
-                            .font(.headline)
-                            .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Neck Length",
-                            value: Binding(
-                                get: { parameterManager.getParameter("BellNeckLength", defaultValue: 0.03) },
-                                set: { parameterManager.setParameter("BellNeckLength", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Neck Diameter",
-                            value: Binding(
-                                get: { parameterManager.getParameter("BellNeckDiameter", defaultValue: 0.01) },
-                                set: { parameterManager.setParameter("BellNeckDiameter", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Trigger Placement",
-                            value: Binding(
-                                get: { parameterManager.getParameter("TriggerPlacement", defaultValue: 0.05) },
-                                set: { parameterManager.setParameter("TriggerPlacement", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Trigger Diameter",
-                            value: Binding(
-                                get: { parameterManager.getParameter("TriggerDiameter", defaultValue: 0.03) },
-                                set: { parameterManager.setParameter("TriggerDiameter", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Cone Height",
-                            value: Binding(
-                                get: { parameterManager.getParameter("BellConeHeight", defaultValue: 0.1) },
-                                set: { parameterManager.setParameter("BellConeHeight", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Cone Base Diameter",
-                            value: Binding(
-                                get: { parameterManager.getParameter("BellConeBaseDiameter", defaultValue: 0.08) },
-                                set: { parameterManager.setParameter("BellConeBaseDiameter", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                    }
-                    
-                    Divider()
-                        .padding(.vertical)
-                    
-                    // Aluminium Settings
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("Aluminium Settings")
-                            .font(.headline)
-                            .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "X Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("AluminiumXOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("AluminiumXOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Y Offset",
-                            value: Binding(
-                                get: { parameterManager.getParameter("AluminiumYOffset", defaultValue: 0.0) },
-                                set: { parameterManager.setParameter("AluminiumYOffset", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Z Length",
-                            value: Binding(
-                                get: { parameterManager.getParameter("AluminiumZLength", defaultValue: 0.25) },
-                                set: { parameterManager.setParameter("AluminiumZLength", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                        
-                        DoubleInputBox(
-                            title: "Diameter",
-                            value: Binding(
-                                get: { parameterManager.getParameter("AluminiumDiameter", defaultValue: 0.03) },
-                                set: { parameterManager.setParameter("AluminiumDiameter", value: $0) }
-                            )
-                        )
-                        .padding(.horizontal)
-                    }
-                }
-                .padding(.vertical)
-            }
+            TreeSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
             .tabItem {
                 Label("Tree", systemImage: "leaf")
             }
             .tag(2)
+            
+            // View Settings
+            ViewSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
+            .tabItem {
+                Label("View", systemImage: "eye")
+            }
+            .tag(3)
         }
         .alert("Settings Saved", isPresented: $showingSaveAlert) {
             Button("OK", role: .cancel) { }

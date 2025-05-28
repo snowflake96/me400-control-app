@@ -5,9 +5,6 @@ import Combine
 class BoundingBoxHandler: ObservableObject {
     static let shared = BoundingBoxHandler()
     
-    // Serial queue for processing bounding box data
-    private let processingQueue = DispatchQueue(label: "com.me400.bboxProcessing")
-    
     @Published var hasDetection: Bool = false
     @Published var centerX: Double = 0.0
     @Published var centerY: Double = 0.0
@@ -28,83 +25,69 @@ class BoundingBoxHandler: ObservableObject {
     @Published private(set) var updateCounter: Int = 0
     
     private init() {
-        // print("BoundingBoxHandler singleton instance created: \(Unmanaged.passUnretained(self).toOpaque())")
-        // Initialize with default values
         reset()
     }
     
     func reset() {
-        // Reset local values
-        self.x1 = 0
-        self.y1 = 0
-        self.x2 = 0
-        self.y2 = 0
-        self.centerX = 0
-        self.centerY = 0
-        self.width = 0
-        self.height = 0
-        self.hasDetection = false
-        self.filteredBboxCenterX = 0
-        self.filteredBboxCenterY = 0
+        x1 = 0
+        y1 = 0
+        x2 = 0
+        y2 = 0
+        centerX = 0
+        centerY = 0
+        width = 0
+        height = 0
+        hasDetection = false
+        filteredBboxCenterX = 0
+        filteredBboxCenterY = 0
     }
     
     func processBoundingBoxData(_ data: [Double]) {
-        processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            guard data.count >= 4 else { return }
-            
-            // Check if all values are NaN
-            let allNaN = data.allSatisfy { $0.isNaN }
-            
-            if allNaN {
-                // No detection - reset values
-                // print("all NaN")
-                DispatchQueue.main.async {
-                    self.reset()
-                }
-                return
-            }
-            
-            // Extract coordinates from data packet
-            let x1 = data[0]  // Top-left X
-            let y1 = data[1]  // Top-left Y
-            let x2 = data[2]  // Bottom-right X
-            let y2 = data[3]  // Bottom-right Y
-            
-            // Update values on main thread
-            DispatchQueue.main.async {
-                // Update local coordinates
-                self.x1 = x1
-                self.y1 = y1
-                self.x2 = x2
-                self.y2 = y2
-                
-                // Calculate center and dimensions
-                self.centerX = (x1 + x2) / 2
-                self.centerY = (y1 + y2) / 2
-                self.width = x2 - x1
-                self.height = y2 - y1
-                self.hasDetection = true
-                
-                // Increment update counter
-                self.updateCounter += 1
-            }
+        guard data.count >= 4 else { return }
+        
+        // Check if all values are NaN
+        let allNaN = data.allSatisfy { $0.isNaN }
+        
+        if allNaN {
+            reset()
+            return
         }
+        
+        // Extract and calculate values
+        let newX1 = data[0]
+        let newY1 = data[1]
+        let newX2 = data[2]
+        let newY2 = data[3]
+        let newCenterX = (newX1 + newX2) / 2
+        let newCenterY = (newY1 + newY2) / 2
+        let newWidth = newX2 - newX1
+        let newHeight = newY2 - newY1
+        
+        // Update properties directly
+        x1 = newX1
+        y1 = newY1
+        x2 = newX2
+        y2 = newY2
+        centerX = newCenterX
+        centerY = newCenterY
+        width = newWidth
+        height = newHeight
+        hasDetection = true
+        updateCounter += 1
     }
     
-    // Process filtered bbox center coordinates
     func processFilteredBboxData(_ data: [Double]) {
-        processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            guard data.count >= 2 else { return }
-            
-            // Update filtered coordinates on main thread
-            DispatchQueue.main.async {
-                self.filteredBboxCenterX = data[0]
-                self.filteredBboxCenterY = data[1]
-                self.updateCounter += 1
-            }
+        guard data.count >= 2 else { return }
+        
+        // Check for NaN values
+        let hasNaN = data.contains { $0.isNaN }
+        if hasNaN {
+            return
         }
+        
+        // Update properties directly
+        filteredBboxCenterX = data[0]
+        filteredBboxCenterY = data[1]
+        updateCounter += 1
     }
 } 

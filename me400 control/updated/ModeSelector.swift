@@ -2,20 +2,18 @@ import SwiftUI
 import UIKit
 
 struct ModeSelector: View {
-    @Binding var selectedMode: String
-    @ObservedObject private var parameterManager = ParameterManager.shared
+    @StateObject private var parameterManager = ParameterManager.shared
     @ObservedObject private var serverManager = ServerCommunicationManager.shared
     
-    init(selectedMode: Binding<String>) {
+    init() {
         UISegmentedControl.appearance().setTitleTextAttributes(
             [.font: UIFont.preferredFont(forTextStyle: .headline)], for: .normal)
         UISegmentedControl.appearance().setTitleTextAttributes(
             [.font: UIFont.preferredFont(forTextStyle: .headline)], for: .selected)
-        _selectedMode = selectedMode
     }
     
     var body: some View {
-        Picker("Mode", selection: $selectedMode) {
+        Picker("Mode", selection: $parameterManager.selectedMode) {
             Text("Manual").tag("Manual")
             Text("AutoAim").tag("AutoAim")
             Text("Autonomous").tag("Autonomous")
@@ -25,10 +23,24 @@ struct ModeSelector: View {
         .padding(.horizontal)
         .disabled(!parameterManager.serverConnected)
         .opacity(parameterManager.serverConnected ? 1.0 : 0.5)
+        .onChange(of: parameterManager.selectedMode) { _, newMode in
+            if parameterManager.serverConnected {
+                switch newMode {
+                case "Manual":
+                    _ = serverManager.send(DataPacket.setManual())
+                case "AutoAim":
+                    _ = serverManager.send(DataPacket.setAutoAim())
+                case "Autonomous":
+                    _ = serverManager.send(DataPacket.setAutonomous())
+                default:
+                    break
+                }
+            }
+        }
     }
 }
 
 #Preview {
-    ModeSelector(selectedMode: .constant("Manual"))
+    ModeSelector()
 }
  

@@ -8,32 +8,89 @@ struct IntegerInputBox: View {
     let stepSize: Int
     let allowNegative: Bool
     
+    @State private var textValue: String = ""
+    @FocusState private var isFocused: Bool
+    
+    init(
+        title: String,
+        value: Binding<Int>,
+        minValue: Int = 0,
+        maxValue: Int = 100,
+        stepSize: Int = 1,
+        allowNegative: Bool = false
+    ) {
+        self.title = title
+        self._value = value
+        self.minValue = minValue
+        self.maxValue = maxValue
+        self.stepSize = stepSize
+        self.allowNegative = allowNegative
+    }
+    
     var body: some View {
         HStack {
-            Text(title)
-                .frame(width: 100, alignment: .leading)
-            
-            HStack(spacing: 0) {
-                Button("-") {
-                    if value > minValue {
-                        value -= stepSize
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(value <= minValue)
+            VStack(spacing: 0) {
+                Text(title)
+                    .font(.subheadline)
                 
-                TextField("", value: $value, format: .number)
+                TextField(title, text: $textValue)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .frame(width: 60)
-                    .multilineTextAlignment(.center)
-                
-                Button("+") {
-                    if value < maxValue {
-                        value += stepSize
+                    .keyboardType(.numberPad)
+                    .focused($isFocused)
+                    .onAppear {
+                        textValue = String(value)
                     }
+                    .onChange(of: value) { _, newValue in
+                        if !isFocused {
+                            textValue = String(newValue)
+                        }
+                    }
+                    .onChange(of: textValue) { _, newValue in
+                        if let intValue = Int(newValue) {
+                            let boundedValue = min(max(intValue, minValue), maxValue)
+                            if boundedValue != value {
+                                value = boundedValue
+                            }
+                        }
+                    }
+                    .onSubmit {
+                        if let intValue = Int(textValue) {
+                            value = min(max(intValue, minValue), maxValue)
+                        }
+                        textValue = String(value)
+                        isFocused = false
+                    }
+            }
+            
+            VStack(spacing: 5) {
+                Button(action: {
+                    let newValue = value + stepSize
+                    if newValue <= maxValue {
+                        value = newValue
+                        textValue = String(value)
+                    }
+                }) {
+                    Image(systemName: "chevron.up")
+                        .font(.caption)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.bordered)
                 .disabled(value >= maxValue)
+                
+                Button(action: {
+                    let newValue = value - stepSize
+                    if newValue >= minValue {
+                        value = newValue
+                        textValue = String(value)
+                    }
+                }) {
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.bordered)
+                .disabled(value <= minValue)
             }
         }
     }

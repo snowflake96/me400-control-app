@@ -30,6 +30,15 @@ class ParameterManager: ObservableObject {
         didSet { saveParameter("CameraYaw", value: cameraYaw) }
     }
     
+    // Mode parameter
+    @Published var selectedMode: String = "Manual" {
+        didSet { 
+            saveParameter("SelectedMode", value: selectedMode)
+            // Also update currentMode to maintain consistency
+            currentMode = selectedMode.lowercased()
+        }
+    }
+    
     // Pipe parameters
     @Published var pipeLocation: Double = 1.5 {
         didSet { saveParameter("PipeLocation", value: pipeLocation) }
@@ -41,18 +50,14 @@ class ParameterManager: ObservableObject {
     @Published private(set) var boundingBoxData: BoundingBoxData?
     
     // Server parameters
-    @Published var serverHost: String = "localhost" {
-        didSet { saveParameter("ServerHost", value: serverHost) }
-    }
-    @Published var serverPort: String = "12345" {
-        didSet { saveParameter("ServerPort", value: serverPort) }
-    }
     @Published var serverConnected: Bool = false {
         didSet { saveParameter("ServerConnected", value: serverConnected) }
     }
     @Published var serverError: String = "" {
         didSet { saveParameter("ServerError", value: serverError) }
     }
+    @AppStorage("ServerHost") var serverHost: String = "localhost"
+    @AppStorage("ServerPort") var serverPort: String = "12345"
     @Published var receivedMessages: [String] = [] {
         didSet { saveParameter("ReceivedMessages", value: receivedMessages) }
     }
@@ -148,6 +153,7 @@ class ParameterManager: ObservableObject {
         hasReceivedRunningState = loadParameter("HasReceivedRunningState", defaultValue: false)
         isSynchronized = loadParameter("IsSynchronized", defaultValue: false)
         isProcessingMessage = loadParameter("IsProcessingMessage", defaultValue: false)
+        selectedMode = loadParameter("SelectedMode", defaultValue: "Manual")
         
         // Load all custom parameters
         for key in UserDefaults.standard.dictionaryRepresentation().keys {
@@ -212,6 +218,10 @@ class ParameterManager: ObservableObject {
             case "IsProcessingMessage":
                 if let processing = value as? Bool {
                     self.isProcessingMessage = processing
+                }
+            case "SelectedMode":
+                if let mode = value as? String {
+                    self.selectedMode = mode
                 }
             default:
                 break

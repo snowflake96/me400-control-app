@@ -5,7 +5,6 @@ struct FinalAppView: View {
     @StateObject private var sceneViewModel = CombinedSceneViewModel()
     @StateObject private var parameterManager = ParameterManager.shared
     @State private var isSettingsPresented = false
-    @State private var selectedMode: String = "Manual"
     
     var body: some View {
         ZStack {
@@ -45,6 +44,45 @@ struct FinalAppView: View {
                         .cornerRadius(8)
                     }
                     Spacer()
+                    
+                    // Message Queue Size Indicator
+                    if parameterManager.serverConnected {
+                        Text("Queue: \(serverManager.messageQueueSize)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                    
+                    // Running State Indicator
+                    if parameterManager.serverConnected {
+                        HStack {
+                            Image(systemName: parameterManager.isRunning ? "circle.fill" : "circle")
+                                .foregroundColor(parameterManager.isRunning ? .green : .red)
+                            Text(parameterManager.isRunning ? "Running" : "Stopped")
+                                .foregroundColor(parameterManager.isRunning ? .green : .red)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(8)
+                    } else {
+                        HStack {
+                            Image(systemName: "wifi.slash")
+                                .foregroundColor(.gray)
+                            Text("Connect to server to start")
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    Spacer()
+                    
                     // Start Button
                     Button(action: {
                         serverManager.sendStart()
@@ -83,19 +121,18 @@ struct FinalAppView: View {
                 // 3D Scene view
                 CombinedSceneView(viewModel: sceneViewModel)
                     .padding()
-//                    .background(Color.gray.opacity(0.1))
                     .cornerRadius(12)
                 
                 // Mode Selector
-                ModeSelector(selectedMode: $selectedMode)
+                ModeSelector()
                     .padding(.vertical, 5)
                 
                 ScrollView {
-                    if selectedMode == "Manual" {
+                    if parameterManager.selectedMode == "Manual" {
                         ManualControlView()
-                    } else if selectedMode == "AutoAim" {
+                    } else if parameterManager.selectedMode == "AutoAim" {
                         AutoAimView()
-                    } else if selectedMode == "Autonomous" {
+                    } else if parameterManager.selectedMode == "Autonomous" {
                         AutonomousView()
                     }
                 }
