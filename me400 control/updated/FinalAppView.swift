@@ -12,111 +12,132 @@ struct FinalAppView: View {
             Color.white.edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 0) {
-                // Top bar with settings button
-                HStack {
-                    Button(action: {
-                        isSettingsPresented = true
-                    }) {
-                        Image(systemName: "gear")
-                            .font(.title)
-                            .foregroundColor(.blue)
-                            .padding()
-                    }
-                    
-                    Spacer()
-                    
-                    // Connect/Disconnect Button
-                    Button(action: {
+                // Top bar with settings button and log display
+                VStack(spacing: 0) {
+                    HStack {
+                        Button(action: {
+                            isSettingsPresented = true
+                        }) {
+                            Image(systemName: "gear")
+                                .font(.title)
+                                .foregroundColor(.blue)
+                                .padding()
+                        }
+                        
+                        Spacer()
+                        
+                        // Connect/Disconnect Button
+                        Button(action: {
+                            if parameterManager.serverConnected {
+                                serverManager.disconnect()
+                            } else {
+                                serverManager.connect()
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: parameterManager.serverConnected ? "wifi.slash" : "wifi")
+                                Text(parameterManager.serverConnected ? "Disconnect" : "Connect")
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(parameterManager.serverConnected ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                            .foregroundColor(parameterManager.serverConnected ? .red : .green)
+                            .cornerRadius(8)
+                        }
+                        Spacer()
+                        
+                        // Message Queue Size Indicator
                         if parameterManager.serverConnected {
-                            serverManager.disconnect()
-                        } else {
-                            serverManager.connect()
+                            Text("Queue: \(serverManager.messageQueueSize)")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(8)
                         }
-                    }) {
-                        HStack {
-                            Image(systemName: parameterManager.serverConnected ? "wifi.slash" : "wifi")
-                            Text(parameterManager.serverConnected ? "Disconnect" : "Connect")
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(parameterManager.serverConnected ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                        .foregroundColor(parameterManager.serverConnected ? .red : .green)
-                        .cornerRadius(8)
-                    }
-                    Spacer()
-                    
-                    // Message Queue Size Indicator
-                    if parameterManager.serverConnected {
-                        Text("Queue: \(serverManager.messageQueueSize)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
+                        
+                        // Running State Indicator
+                        if parameterManager.serverConnected {
+                            HStack {
+                                Image(systemName: parameterManager.isRunning ? "circle.fill" : "circle")
+                                    .foregroundColor(parameterManager.isRunning ? .green : .red)
+                                Text(parameterManager.isRunning ? "Running" : "Stopped")
+                                    .foregroundColor(parameterManager.isRunning ? .green : .red)
+                            }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .background(Color.gray.opacity(0.1))
                             .cornerRadius(8)
-                    }
-                    
-                    // Running State Indicator
-                    if parameterManager.serverConnected {
-                        HStack {
-                            Image(systemName: parameterManager.isRunning ? "circle.fill" : "circle")
-                                .foregroundColor(parameterManager.isRunning ? .green : .red)
-                            Text(parameterManager.isRunning ? "Running" : "Stopped")
-                                .foregroundColor(parameterManager.isRunning ? .green : .red)
+                        } else {
+                            HStack {
+                                Image(systemName: "wifi.slash")
+                                    .foregroundColor(.gray)
+                                Text("Connect to server to start")
+                                    .foregroundColor(.gray)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(8)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(8)
-                    } else {
-                        HStack {
-                            Image(systemName: "wifi.slash")
-                                .foregroundColor(.gray)
-                            Text("Connect to server to start")
-                                .foregroundColor(.gray)
+                        
+                        Spacer()
+                        
+                        // Start Button
+                        Button(action: {
+                            serverManager.sendStart()
+                        }) {
+                            HStack {
+                                Image(systemName: "play.fill")
+                                Text("START")
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.green.opacity(0.1))
+                            .foregroundColor(.green)
+                            .cornerRadius(8)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(8)
-                    }
-                    
-                    Spacer()
-                    
-                    // Start Button
-                    Button(action: {
-                        serverManager.sendStart()
-                    }) {
-                        HStack {
-                            Image(systemName: "play.fill")
-                            Text("START")
+                        .disabled(!parameterManager.serverConnected)
+                        
+                        // Stop Button
+                        Button(action: {
+                            serverManager.sendStop()
+                        }) {
+                            HStack {
+                                Image(systemName: "stop.fill")
+                                Text("STOP")
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.red.opacity(0.1))
+                            .foregroundColor(.red)
+                            .cornerRadius(8)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.green.opacity(0.1))
-                        .foregroundColor(.green)
-                        .cornerRadius(8)
+                        .disabled(!parameterManager.serverConnected)
+                        Spacer()
                     }
-                    .disabled(!parameterManager.serverConnected)
+                    .background(Color.gray.opacity(0.1))
                     
-                    // Stop Button
-                    Button(action: {
-                        serverManager.sendStop()
-                    }) {
+                    // Log message display
+                    if !parameterManager.lastLogMessage.isEmpty {
                         HStack {
-                            Image(systemName: "stop.fill")
-                            Text("STOP")
+                            Text("Log: \(parameterManager.lastLogMessage)")
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.yellow.opacity(0.1))
+                                .cornerRadius(8)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            
+                            Spacer()
                         }
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.red.opacity(0.1))
-                        .foregroundColor(.red)
-                        .cornerRadius(8)
+                        .background(Color.gray.opacity(0.05))
                     }
-                    .disabled(!parameterManager.serverConnected)
-                    Spacer()
                 }
-                .background(Color.gray.opacity(0.1))
                 
                 // 3D Scene view
                 CombinedSceneView(viewModel: sceneViewModel)

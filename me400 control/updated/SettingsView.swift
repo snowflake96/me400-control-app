@@ -100,17 +100,12 @@ struct SimpleLaunchThresholdRow: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack {
-                DoubleInputBox(
+                UInt8InputBox(
                     title: "N (Integer)",
-                    value: Binding(
-                        get: { parameterManager.getParameter("LaunchThresholdN", defaultValue: 5.0) },
-                        set: { parameterManager.setParameter("LaunchThresholdN", value: $0) }
-                    ),
-                    minValue: 0.0,
-                    maxValue: 1000.0,
-                    stepSize: 1.0,
-                    format: "%.0f",
-                    allowNegative: false
+                    value: $parameterManager.launchThresholdN,
+                    minValue: 1,
+                    maxValue: 255,
+                    stepSize: 1
                 )
                 
                 DoubleInputBox(
@@ -130,8 +125,8 @@ struct SimpleLaunchThresholdRow: View {
                 
                 Button("Send") {
                     let epsilon = parameterManager.getParameter("LaunchThresholdEpsilon", defaultValue: 0.005)
-                    let n = Int(parameterManager.getParameter("LaunchThresholdN", defaultValue: 5.0))
-                    _ = ServerCommunicationManager.shared.send(DataPacket.setLaunchThreshold(eps: epsilon, n: UInt8(n)))
+                    let n = parameterManager.launchThresholdN
+                    _ = ServerCommunicationManager.shared.send(DataPacket.setLaunchThreshold(eps: epsilon, n: n))
                 }
                 .buttonStyle(.bordered)
                 .disabled(!parameterManager.serverConnected)
@@ -530,7 +525,6 @@ struct SettingsView: View {
         ("StopThrottleStepSize", 0.1),
         ("DefaultSpeed", 1.0),
         ("DefaultSpeedStepSize", 0.1),
-        ("LaunchThresholdN", 5.0),
         ("LaunchThresholdEpsilon", 0.005),
         ("LaunchThresholdEpsilonStepSize", 0.001),
         ("MaxConsecutiveNans", 10.0),
@@ -572,6 +566,8 @@ struct SettingsView: View {
             parameterManager.setParameter(key, value: defaultValue)
             UserDefaults.standard.set(defaultValue, forKey: key)
         }
+        // Reset UInt8 properties separately
+        parameterManager.launchThresholdN = 5
     }
     
     var body: some View {

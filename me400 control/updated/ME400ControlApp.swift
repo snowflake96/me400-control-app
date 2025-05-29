@@ -1,6 +1,6 @@
 import SwiftUI
 
-@main
+//@main //for temporal
 struct ME400ControlApp: App {
     @StateObject private var serverManager = ServerCommunicationManager()
     @StateObject private var settingsManager = SettingsManager()

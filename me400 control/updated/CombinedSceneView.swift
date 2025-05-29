@@ -127,6 +127,7 @@ class CombinedSceneViewModel: ObservableObject {
 struct CombinedSceneView: View {
     @ObservedObject private var viewModel: CombinedSceneViewModel
     @ObservedObject private var boundingBoxHandler = BoundingBoxHandler.shared
+    @ObservedObject private var parameterManager = ParameterManager.shared
     @State private var scene: SCNScene?
     @State private var camera: SCNNode?
     @State private var lastPipeLocation: Double?
@@ -221,20 +222,34 @@ struct CombinedSceneView: View {
                         .cornerRadius(8)
                     
                     // Tilt display
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Tilt Values")
+                    HStack(spacing: 15) {
+                        Text("Roll: \(parameterManager.tiltRoll, specifier: "%.2f")°")
                             .foregroundColor(.white)
-                            .font(.caption)
-                        Text("Roll: \(ServerCommunicationManager.shared.currentRoll, specifier: "%.2f")°")
-                            .foregroundColor(.cyan)
-                            .font(.caption)
-                        Text("Pitch: \(ServerCommunicationManager.shared.currentPitch, specifier: "%.2f")°")
-                            .foregroundColor(.cyan)
-                            .font(.caption)
+                            .padding()
+                            .background(Color.black.opacity(0.5))
+                            .cornerRadius(8)
+                        
+                        Text("Pitch: \(parameterManager.tiltPitch, specifier: "%.2f")°")
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.black.opacity(0.5))
+                            .cornerRadius(8)
+                        
+                        // Launch counter display
+                        if let launchCount = parameterManager.launchCounter {
+                            Text("Launch#: \(launchCount)")
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.black.opacity(0.5))
+                                .cornerRadius(8)
+                        } else {
+                            Text("Launch#: --")
+                                .foregroundColor(.gray)
+                                .padding()
+                                .background(Color.black.opacity(0.5))
+                                .cornerRadius(8)
+                        }
                     }
-                    .padding()
-                    .background(Color.black.opacity(0.5))
-                    .cornerRadius(8)
                     
                     Spacer()
                     
@@ -875,6 +890,15 @@ private func createBoundingBox(scene: SCNScene, boundingBoxHandler: BoundingBoxH
     
     let detNode = SCNNode(geometry: detBox)
     detNode.name = "boundingBox"
+    
+    // Position the detection box at the center of the bounding box
+    let detNodePositionX = Float(boundingBoxHandler.centerX) * Float(refBoxWidth/2) + refOffsetX
+    let detNodePositionY = Float(boundingBoxHandler.centerY) * Float(refBoxHeight/2) + refOffsetY
+    detNode.position = SCNVector3(
+        detNodePositionX,
+        detNodePositionY,
+        0.01  // Slightly in front of the reference box
+    )
     
     // Add border to detection box
     let borderBox = SCNBox(

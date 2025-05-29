@@ -204,7 +204,7 @@ def create_current_state_packet(mode, state):
 def main():
     # Server configuration
     HOST = '0.0.0.0'  # Listen on all available interfaces
-    PORT = 12346
+    PORT = 12345
     
     # Create socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -232,6 +232,7 @@ def main():
 
         packet_counter = 0  # Counter for tracking number of packets sent
         is_running = True
+        current_mode = 8
         
         while True:
             # Check for incoming data
@@ -245,22 +246,30 @@ def main():
                     # Handle STOP command
                     if data[0] == 6:  # Stop command
                         is_running = False
-                        print("Received STOP command, stopping data transmission")
-                        client_socket.send(create_stop_packet())  # Send stop response
+                        # print("Received STOP command, stopping data transmission")
+                        # client_socket.send(create_stop_packet())  # Send stop response
                         continue
                     
                     # Handle START command
                     elif data[0] == 5:  # Start command
                         is_running = True
-                        print("Received START command, resuming data transmission")
-                        client_socket.send(create_start_packet())  # Send start response
+                        # print("Received START command, resuming data transmission")
+                        # client_socket.send(create_start_packet())  # Send start response
+                        continue
+
+                    elif data[0] == 7:
+                        current_mode = 7
+                        continue
+
+                    elif data[0] == 8:
+                        current_mode = 8
                         continue
                     
                     # Handle Query command
                     elif data[0] == 17:  # Query command
                         print("Received Query command, sending CurrentState packet")
                         # Send CurrentState packet with current mode and state
-                        client_socket.send(create_current_state_packet(8, 5 if is_running else 6))  # 8 for manual, 5/6 for running/stopped
+                        client_socket.send(create_current_state_packet(current_mode, 5 if is_running else 6))  # 8 for manual, 5/6 for running/stopped
                         continue
                     
                     # # Handle mode change commands
@@ -283,19 +292,19 @@ def main():
                 t = time.time()
                 
                 # BboxPos: x fixed at 0.5, y oscillates -0.5 to 0.5
-                bbox_center_x = 0.3 * math.sin(t)  # Fixed x position
-                bbox_center_y = 0.0  # Oscillate between -0.5 and 0.5
+                bbox_center_x = 0.5 * math.sin(t)  # Fixed x position
+                bbox_center_y = 0.2  # Oscillate between -0.5 and 0.5
                 
                 # FilteredBbox: x fixed at -0.3, y oscillates -0.3 to 0.3
                 filtered_center_x = -0.3  # Fixed x position
-                filtered_center_y = 0.3 * math.sin(t)  # Oscillate between -0.3 and 0.3
+                filtered_center_y = 0.4 * math.sin(t)  # Oscillate between -0.3 and 0.3
                 
                 # Fixed size for the bounding box
                 width = 0.1
                 height = 0.1
                 
                 # Calculate box corners for BboxPos
-                if packet_counter % 20 == 0:  # Every 20th packet, send NaN values
+                if packet_counter % 50 <=20:  # Every 20th packet, send NaN values
                     x1 = float('nan')
                     y1 = float('nan')
                     x2 = float('nan')
@@ -318,7 +327,7 @@ def main():
                 packet_counter += 1
             
             # Sleep for a short time to control update rate
-            time.sleep(0.02)  # 10 Hz update rate
+            time.sleep(0.01)  # 10 Hz update rate
             
     except KeyboardInterrupt:
         print("\nServer shutting down...")

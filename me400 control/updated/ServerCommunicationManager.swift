@@ -6,29 +6,59 @@ import Combine
 class ServerCommunicationManager: ObservableObject {
     static let shared = ServerCommunicationManager()
     
-    @Published var isServerConnected: Bool = false
-    @Published var connectionError: String? = nil
-    @Published var isProcessingMessage: Bool = false
-    @Published var hasReceivedCurrentState: Bool = false
-    @Published var isSynchronized: Bool = false
-    
-    // Tilt data properties
-    @Published var currentRoll: Double = 0.0
-    @Published var currentPitch: Double = 0.0
-    @Published var lastTiltUpdate: Date = Date()
-    
     private var connection: NWConnection?
-    private let queue = DispatchQueue(label: "ServerCommunicationManager", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.me400.serverConnection")
     
-    // Message queue for ordered processing
+    // Thread-safe message queue
+    private let messageQueueLock = NSLock()
+    private var _messageQueue: [(type: UInt8, payload: Data)] = []
     private var messageQueue: [(type: UInt8, payload: Data)] {
-        get { ParameterManager.shared.getParameter("MessageQueue", defaultValue: []) }
-        set { ParameterManager.shared.setParameter("MessageQueue", value: newValue) }
+        get {
+            messageQueueLock.lock()
+            defer { messageQueueLock.unlock() }
+            return _messageQueue
+        }
+        set {
+            messageQueueLock.lock()
+            defer { messageQueueLock.unlock() }
+            _messageQueue = newValue
+        }
     }
     
     // Public property to access message queue size
     var messageQueueSize: Int {
-        messageQueue.count
+        messageQueueLock.lock()
+        defer { messageQueueLock.unlock() }
+        return _messageQueue.count
+    }
+    
+    private var isProcessingMessage: Bool {
+        get { ParameterManager.shared.getParameter("IsProcessingMessage", defaultValue: false) }
+        set { ParameterManager.shared.setParameter("IsProcessingMessage", value: newValue) }
+    }
+    
+    // Synchronization state managed by ParameterManager
+    private var hasReceivedCurrentState: Bool {
+        get { ParameterManager.shared.getParameter("HasReceivedCurrentState", defaultValue: false) }
+        set { ParameterManager.shared.setParameter("HasReceivedCurrentState", value: newValue) }
+    }
+    
+    private var isSynchronized: Bool {
+        get { ParameterManager.shared.getParameter("IsSynchronized", defaultValue: false) }
+        set { ParameterManager.shared.setParameter("IsSynchronized", value: newValue) }
+    }
+    
+    // Published properties to notify observers of changes
+    private var isServerConnected: Bool {
+        didSet {
+            ParameterManager.shared.setParameter("ServerConnected", value: isServerConnected)
+        }
+    }
+    
+    private var connectionError: String? {
+        didSet {
+            ParameterManager.shared.setParameter("ServerError", value: connectionError ?? "")
+        }
     }
     
     // Properties managed by ParameterManager
@@ -85,6 +115,11 @@ class ServerCommunicationManager: ObservableObject {
     private var lastBboxTimestamp: Date?
     private var lastFilteredBboxTimestamp: Date?
     
+    // Connection retry mechanism
+    private var reconnectTimer: Timer?
+    private let maxReconnectAttempts = 5
+    private var reconnectAttempts = 0
+    
     // Static initialization to ensure parameters exist
     static func initializeParameters() {
         // Initialize with default values if they don't exist
@@ -115,11 +150,46 @@ class ServerCommunicationManager: ObservableObject {
         if !ParameterManager.shared.hasParameter("IsSynchronized") {
             ParameterManager.shared.setParameter("IsSynchronized", value: false)
         }
-        if !ParameterManager.shared.hasParameter("MessageQueue") {
-            ParameterManager.shared.setParameter("MessageQueue", value: [])
-        }
         if !ParameterManager.shared.hasParameter("IsProcessingMessage") {
             ParameterManager.shared.setParameter("IsProcessingMessage", value: false)
+        }
+        
+        // Initialize PID parameters with default values
+        if !ParameterManager.shared.hasParameter("PitchP") {
+            ParameterManager.shared.setParameter("PitchP", value: 10.0)
+        }
+        if !ParameterManager.shared.hasParameter("PitchPStepSize") {
+            ParameterManager.shared.setParameter("PitchPStepSize", value: 1.0)
+        }
+        if !ParameterManager.shared.hasParameter("PitchI") {
+            ParameterManager.shared.setParameter("PitchI", value: 0.0)
+        }
+        if !ParameterManager.shared.hasParameter("PitchIStepSize") {
+            ParameterManager.shared.setParameter("PitchIStepSize", value: 0.1)
+        }
+        if !ParameterManager.shared.hasParameter("PitchIntegralLimit") {
+            ParameterManager.shared.setParameter("PitchIntegralLimit", value: 1.0)
+        }
+        if !ParameterManager.shared.hasParameter("PitchIntegralLimitStepSize") {
+            ParameterManager.shared.setParameter("PitchIntegralLimitStepSize", value: 0.1)
+        }
+        if !ParameterManager.shared.hasParameter("YawP") {
+            ParameterManager.shared.setParameter("YawP", value: 10.0)
+        }
+        if !ParameterManager.shared.hasParameter("YawPStepSize") {
+            ParameterManager.shared.setParameter("YawPStepSize", value: 1.0)
+        }
+        if !ParameterManager.shared.hasParameter("YawI") {
+            ParameterManager.shared.setParameter("YawI", value: 0.0)
+        }
+        if !ParameterManager.shared.hasParameter("YawIStepSize") {
+            ParameterManager.shared.setParameter("YawIStepSize", value: 0.1)
+        }
+        if !ParameterManager.shared.hasParameter("YawIntegralLimit") {
+            ParameterManager.shared.setParameter("YawIntegralLimit", value: 1.0)
+        }
+        if !ParameterManager.shared.hasParameter("YawIntegralLimitStepSize") {
+            ParameterManager.shared.setParameter("YawIntegralLimitStepSize", value: 0.1)
         }
     }
     
@@ -147,19 +217,45 @@ class ServerCommunicationManager: ObservableObject {
         hasReceivedCurrentState = false
         isSynchronized = false
         
+        // Reset reconnect attempts
+        reconnectAttempts = 0
+        reconnectTimer?.invalidate()
+        
         let params = NWParameters.tcp
         params.requiredInterfaceType = .other
+        
+        // Configure TCP options for keepalive
+        if let tcpOptions = params.defaultProtocolStack.internetProtocol as? NWProtocolTCP.Options {
+            tcpOptions.enableKeepalive = true
+            tcpOptions.keepaliveIdle = 5
+            tcpOptions.keepaliveInterval = 5
+            tcpOptions.keepaliveCount = 3
+        }
+        
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(integerLiteral: portNumber))
         connection = NWConnection(to: endpoint, using: params)
+        
+        // Implement connection timeout with a timer
+        var connectionTimeoutTimer: Timer?
+        connectionTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { _ in
+            if self.connection?.state != .ready {
+                self.connectionError = "Connection timeout"
+                self.connection?.cancel()
+            }
+        }
         
         connection?.stateUpdateHandler = { [weak self] state in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 
+                // Cancel timeout timer if connection succeeds or fails
+                connectionTimeoutTimer?.invalidate()
+                
                 switch state {
                 case .ready:
                     self.isServerConnected = true
                     self.connectionError = nil
+                    self.reconnectAttempts = 0
                     self.receiveNextMessage()
                     // Send Query packet to sync state
                     _ = self.send(DataPacket.query())
@@ -167,6 +263,7 @@ class ServerCommunicationManager: ObservableObject {
                     self.isServerConnected = false
                     self.connectionError = error.localizedDescription
                     self.connection?.cancel()
+                    self.handleDisconnection()
                 case .waiting(let error):
                     self.isServerConnected = false
                     self.connectionError = error.localizedDescription
@@ -182,7 +279,25 @@ class ServerCommunicationManager: ObservableObject {
         connection?.start(queue: queue)
     }
     
+    private func handleDisconnection() {
+        guard reconnectAttempts < maxReconnectAttempts else {
+            connectionError = "Max reconnection attempts reached"
+            return
+        }
+        
+        reconnectTimer?.invalidate()
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            self.reconnectAttempts += 1
+            self.connect()
+        }
+    }
+    
     func disconnect() {
+        // Cancel any reconnect timer
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
+        
         // Cancel the connection
         connection?.cancel()
         
@@ -291,11 +406,6 @@ class ServerCommunicationManager: ObservableObject {
                 let z = self.readDouble(at: 16, from: payload)
                 let w = self.readDouble(at: 24, from: payload)
                 
-                // Measure latency
-                if let lastTimestamp = self.lastBboxTimestamp {
-                    let latency = now.timeIntervalSince(lastTimestamp)
-                    print("[LATENCY] Bbox processing time: \(latency * 1000)ms")
-                }
                 self.lastBboxTimestamp = now
                 
                 // Process on main thread for @Published property safety
@@ -313,11 +423,6 @@ class ServerCommunicationManager: ObservableObject {
                 let y = self.readDouble(at: 8, from: payload)
                 let z = self.readDouble(at: 16, from: payload)
                 
-                // Measure latency
-                if let lastTimestamp = self.lastFilteredBboxTimestamp {
-                    let latency = now.timeIntervalSince(lastTimestamp)
-                    print("[LATENCY] FilteredBbox processing time: \(latency * 1000)ms")
-                }
                 self.lastFilteredBboxTimestamp = now
                 
                 // Process on main thread for @Published property safety
@@ -330,8 +435,10 @@ class ServerCommunicationManager: ObservableObject {
                 return
             }
             
-            // Add other messages to queue
-            self.messageQueue.append((type: type, payload: payload))
+            // Add other messages to queue with thread safety
+            self.messageQueueLock.lock()
+            self._messageQueue.append((type: type, payload: payload))
+            self.messageQueueLock.unlock()
             
             // Process next message if not already processing
             if !self.isProcessingMessage {
@@ -344,30 +451,40 @@ class ServerCommunicationManager: ObservableObject {
     }
     
     private func processNextMessage() {
-        guard !messageQueue.isEmpty else {
+        // Get next message from queue with thread safety
+        messageQueueLock.lock()
+        guard !_messageQueue.isEmpty else {
+            messageQueueLock.unlock()
             isProcessingMessage = false
             return
         }
         
         isProcessingMessage = true
-        let message = messageQueue.removeFirst()
+        let message = _messageQueue.removeFirst()
+        messageQueueLock.unlock()
+        
         let type = message.type
         let payload = message.payload
 
         // Handle CurrentState packet for synchronization
         if type == 25 { // CurrentState
+            // Debug: Print the raw payload in hex for LaunchCounter debugging
+            let hexString = payload.map { String(format: "%02x", $0) }.joined(separator: " ")
+            print("[DEBUG] CurrentState packet payload (hex): \(hexString)")
+            
             let mode = readUInt8(at: 0, from: payload)
             let state = readUInt8(at: 1, from: payload)
-            let launchCounter = readUInt32(at: 3, from: payload)
-            let maxConsecutiveNans = readUInt32(at: 7, from: payload)
-            let targetX = readDouble(at: 11, from: payload)
-            let targetY = readDouble(at: 19, from: payload)
-            let stopThrottle = readDouble(at: 27, from: payload)
-            let motorOffset = readDouble(at: 35, from: payload)
-            let defaultSpeed = readDouble(at: 43, from: payload)
-            let cutoffFreq = readDouble(at: 51, from: payload)
+            let launchCounter = readUInt32(at: 2, from: payload)
+            let maxConsecutiveNans = readUInt32(at: 6, from: payload)
+            let targetX = readDouble(at: 10, from: payload)
+            let targetY = readDouble(at: 18, from: payload)
+            let stopThrottle = readDouble(at: 26, from: payload)
+            let motorOffset = readDouble(at: 34, from: payload)
+            let defaultSpeed = readDouble(at: 42, from: payload)
+            let cutoffFreq = readDouble(at: 50, from: payload)
             
             print("[DEBUG] Received CurrentState packet - Raw mode: \(mode), Raw state: \(state)")
+            print("[DEBUG] CurrentState LaunchCounter: \(launchCounter) (from bytes 2-5: \(Array(payload[2..<6]).map { String(format: "%02x", $0) }.joined(separator: " ")))")
             
             DispatchQueue.main.async {
                 // Update mode
@@ -397,7 +514,8 @@ class ServerCommunicationManager: ObservableObject {
                 }
                 
                 // Update other parameters
-                ParameterManager.shared.setParameter("LaunchCounter", value: Int32(launchCounter))
+                ParameterManager.shared.setParameter("LaunchCounter", value: launchCounter)
+                ParameterManager.shared.launchCounter = launchCounter
                 ParameterManager.shared.setParameter("MaxConsecutiveNans", value: maxConsecutiveNans)
                 ParameterManager.shared.setParameter("TargetX", value: targetX)
                 ParameterManager.shared.setParameter("TargetY", value: targetY)
@@ -456,18 +574,23 @@ class ServerCommunicationManager: ObservableObject {
         case 15: // Tilt
             let roll = readDouble(at: 0, from: payload)
             let pitch = readDouble(at: 8, from: payload)
-            let z = readDouble(at: 16, from: payload)  // unused
+            let _ = readDouble(at: 16, from: payload)  // unused z coordinate
             messageText = "Received Tilt: roll=\(roll), pitch=\(pitch)"
             
-            // Update tilt data on main thread
+            // Store tilt data in ParameterManager
             DispatchQueue.main.async {
-                self.currentRoll = roll
-                self.currentPitch = pitch
-                self.lastTiltUpdate = Date()
+                ParameterManager.shared.tiltRoll = roll
+                ParameterManager.shared.tiltPitch = pitch
             }
         case 16: // Log
             if let text = String(bytes: payload, encoding: .utf8) {
                 messageText = "Received Log: \(text)"
+                
+                // Store log message in ParameterManager
+                DispatchQueue.main.async {
+                    // Extract just the log text without the "Received Log: " prefix
+                    ParameterManager.shared.lastLogMessage = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             }
         case 17: // Query
             messageText = "Received Query"
@@ -478,8 +601,18 @@ class ServerCommunicationManager: ObservableObject {
             let frequency = readDouble(at: 0, from: payload)
             messageText = "Received SetCutoffFrequency: \(frequency)"
         case 21: // LaunchCounter
-            let counter = Int32(readDouble(at: 0, from: payload))
+            // Debug: Print the raw payload in hex
+            let hexString = payload.map { String(format: "%02x", $0) }.joined(separator: " ")
+            print("[DEBUG] LaunchCounter packet payload (hex): \(hexString)")
+            
+            let counter = readUInt32(at: 0, from: payload)
+            print("[DEBUG] LaunchCounter parsed value: \(counter) (from bytes 0-3: \(Array(payload[0..<4]).map { String(format: "%02x", $0) }.joined(separator: " ")))")
             messageText = "Received LaunchCounter: \(counter)"
+            
+            // Store launch counter in ParameterManager
+            DispatchQueue.main.async {
+                ParameterManager.shared.launchCounter = counter
+            }
         case 22: // SetStopThrottle
             let throttle = readDouble(at: 0, from: payload)
             messageText = "Received SetStopThrottle: \(throttle)"
@@ -532,7 +665,7 @@ class ServerCommunicationManager: ObservableObject {
         DispatchQueue.main.async {
             self.isRunning = true
         }
-        send(packet)
+        _ = send(packet)
     }
     
     func sendStop() {
@@ -541,7 +674,7 @@ class ServerCommunicationManager: ObservableObject {
         DispatchQueue.main.async {
             self.isRunning = false
         }
-        send(packet)
+        _ = send(packet)
     }
     
     deinit {

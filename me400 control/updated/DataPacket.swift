@@ -36,7 +36,7 @@ enum DataPacketData {
     case double(Double)
     case text(String)
     case threshold(eps: Double, n: UInt8)
-    case uint32(UInt32)  // For SetMaxConsecutiveNans
+    case uint32(UInt32)  // For SetMaxConsecutiveNans and LaunchCounter
     case currentState(mode: UInt8, state: UInt8, launchCounter: UInt32, maxConsecutiveNans: UInt32, 
                      targetX: Double, targetY: Double, stopThrottle: Double, motorOffset: Double,
                      defaultSpeed: Double, cutoffFreq: Double)
@@ -61,40 +61,35 @@ struct DataPacket {
             data[1] = value ? 1 : 0
             
         case .double(let value):
-            var v = value
-            let vData = Data(bytes: &v, count: MemoryLayout<Double>.size)
-            data.replaceSubrange(1..<9, with: vData)
+            var littleEndianValue = value.bitPattern.littleEndian
+            data.replaceSubrange(1..<9, with: Data(bytes: &littleEndianValue, count: 8))
             
         case .vector3(let x, let y, let z):
-            var xV = x, yV = y, zV = z
-            let xData = Data(bytes: &xV, count: MemoryLayout<Double>.size)
-            let yData = Data(bytes: &yV, count: MemoryLayout<Double>.size)
-            let zData = Data(bytes: &zV, count: MemoryLayout<Double>.size)
-            data.replaceSubrange(1..<9, with: xData)
-            data.replaceSubrange(9..<17, with: yData)
-            data.replaceSubrange(17..<25, with: zData)
+            var xLE = x.bitPattern.littleEndian
+            var yLE = y.bitPattern.littleEndian
+            var zLE = z.bitPattern.littleEndian
+            data.replaceSubrange(1..<9, with: Data(bytes: &xLE, count: 8))
+            data.replaceSubrange(9..<17, with: Data(bytes: &yLE, count: 8))
+            data.replaceSubrange(17..<25, with: Data(bytes: &zLE, count: 8))
             
         case .vector4(let x, let y, let z, let w):
-            var xV = x, yV = y, zV = z, wV = w
-            let xData = Data(bytes: &xV, count: MemoryLayout<Double>.size)
-            let yData = Data(bytes: &yV, count: MemoryLayout<Double>.size)
-            let zData = Data(bytes: &zV, count: MemoryLayout<Double>.size)
-            let wData = Data(bytes: &wV, count: MemoryLayout<Double>.size)
-            data.replaceSubrange(1..<9, with: xData)
-            data.replaceSubrange(9..<17, with: yData)
-            data.replaceSubrange(17..<25, with: zData)
-            data.replaceSubrange(25..<33, with: wData)
+            var xLE = x.bitPattern.littleEndian
+            var yLE = y.bitPattern.littleEndian
+            var zLE = z.bitPattern.littleEndian
+            var wLE = w.bitPattern.littleEndian
+            data.replaceSubrange(1..<9, with: Data(bytes: &xLE, count: 8))
+            data.replaceSubrange(9..<17, with: Data(bytes: &yLE, count: 8))
+            data.replaceSubrange(17..<25, with: Data(bytes: &zLE, count: 8))
+            data.replaceSubrange(25..<33, with: Data(bytes: &wLE, count: 8))
             
         case .threshold(let eps, let n):
-            var epsV = eps
-            let epsData = Data(bytes: &epsV, count: MemoryLayout<Double>.size)
-            data.replaceSubrange(1..<9, with: epsData)
+            var epsLE = eps.bitPattern.littleEndian
+            data.replaceSubrange(1..<9, with: Data(bytes: &epsLE, count: 8))
             data[9] = n
             
         case .uint32(let value):
-            var v = value
-            let vData = Data(bytes: &v, count: MemoryLayout<UInt32>.size)
-            data.replaceSubrange(1..<5, with: vData)
+            var littleEndianValue = value.littleEndian
+            data.replaceSubrange(1..<5, with: Data(bytes: &littleEndianValue, count: 4))
             
         case .currentState(let mode, let state, let launchCounter, let maxConsecutiveNans,
                          let targetX, let targetY, let stopThrottle, let motorOffset,
@@ -102,35 +97,23 @@ struct DataPacket {
             data[1] = mode
             data[2] = state
             
-            var lc = launchCounter
-            var mcn = maxConsecutiveNans
-            var tx = targetX
-            var ty = targetY
-            var st = stopThrottle
-            var mo = motorOffset
-            var ds = defaultSpeed
-            var cf = cutoffFreq
+            var lcLE = launchCounter.littleEndian
+            var mcnLE = maxConsecutiveNans.littleEndian
+            var txLE = targetX.bitPattern.littleEndian
+            var tyLE = targetY.bitPattern.littleEndian
+            var stLE = stopThrottle.bitPattern.littleEndian
+            var moLE = motorOffset.bitPattern.littleEndian
+            var dsLE = defaultSpeed.bitPattern.littleEndian
+            var cfLE = cutoffFreq.bitPattern.littleEndian
             
-            let lcData = Data(bytes: &lc, count: MemoryLayout<UInt32>.size)
-            let mcnData = Data(bytes: &mcn, count: MemoryLayout<UInt32>.size)
-            let txData = Data(bytes: &tx, count: MemoryLayout<Double>.size)
-            let tyData = Data(bytes: &ty, count: MemoryLayout<Double>.size)
-            let stData = Data(bytes: &st, count: MemoryLayout<Double>.size)
-            let moData = Data(bytes: &mo, count: MemoryLayout<Double>.size)
-            let dsData = Data(bytes: &ds, count: MemoryLayout<Double>.size)
-            let cfData = Data(bytes: &cf, count: MemoryLayout<Double>.size)
-            
-            data.replaceSubrange(3..<7, with: lcData)
-            data.replaceSubrange(7..<11, with: mcnData)
-            data.replaceSubrange(11..<19, with: txData)
-            data.replaceSubrange(19..<27, with: tyData)
-            data.replaceSubrange(27..<35, with: stData)
-            data.replaceSubrange(35..<43, with: moData)
-            data.replaceSubrange(43..<51, with: dsData)
-            data.replaceSubrange(51..<59, with: cfData)
-            
-        default:
-            break
+            data.replaceSubrange(3..<7, with: Data(bytes: &lcLE, count: 4))
+            data.replaceSubrange(7..<11, with: Data(bytes: &mcnLE, count: 4))
+            data.replaceSubrange(11..<19, with: Data(bytes: &txLE, count: 8))
+            data.replaceSubrange(19..<27, with: Data(bytes: &tyLE, count: 8))
+            data.replaceSubrange(27..<35, with: Data(bytes: &stLE, count: 8))
+            data.replaceSubrange(35..<43, with: Data(bytes: &moLE, count: 8))
+            data.replaceSubrange(43..<51, with: Data(bytes: &dsLE, count: 8))
+            data.replaceSubrange(51..<59, with: Data(bytes: &cfLE, count: 8))
         }
         
         return data
@@ -236,9 +219,9 @@ struct DataPacket {
         return DataPacket(type: .setCutoffFrequency, data: .double(value))
     }
     
-    // Create a launch counter packet
-    static func launchCounter(_ value: Int32) -> DataPacket {
-        return DataPacket(type: .launchCounter, data: .double(Double(value)))
+    // Create a launch counter packet - Fixed to use uint32
+    static func launchCounter(_ value: UInt32) -> DataPacket {
+        return DataPacket(type: .launchCounter, data: .uint32(value))
     }
     
     // Create a set stop throttle packet

@@ -49,6 +49,74 @@ class ParameterManager: ObservableObject {
     @Published private(set) var hasDetection: Bool = false
     @Published private(set) var boundingBoxData: BoundingBoxData?
     
+    // Tilt parameters (roll and pitch from server)
+    @Published var tiltRoll: Double = 0.0 {
+        didSet { saveParameter("TiltRoll", value: tiltRoll) }
+    }
+    @Published var tiltPitch: Double = 0.0 {
+        didSet { saveParameter("TiltPitch", value: tiltPitch) }
+    }
+    
+    // Launch counter from server
+    @Published var launchCounter: UInt32? = nil {
+        didSet { 
+            if let counter = launchCounter {
+                saveParameter("LaunchCounter", value: counter)
+            }
+        }
+    }
+    
+    // Launch threshold N parameter (UInt8)
+    @Published var launchThresholdN: UInt8 = 5 {
+        didSet { saveParameter("LaunchThresholdN", value: launchThresholdN) }
+    }
+    
+    // Last log message from server
+    @Published var lastLogMessage: String = "" {
+        didSet { saveParameter("LastLogMessage", value: lastLogMessage) }
+    }
+    
+    // PID Control Parameters
+    // Pitch Control
+    @Published var pitchP: Double = 10.0 {
+        didSet { saveParameter("PitchP", value: pitchP) }
+    }
+    @Published var pitchI: Double = 0.0 {
+        didSet { saveParameter("PitchI", value: pitchI) }
+    }
+    @Published var pitchIntegralLimit: Double = 1.0 {
+        didSet { saveParameter("PitchIntegralLimit", value: pitchIntegralLimit) }
+    }
+    @Published var pitchPStepSize: Double = 1.0 {
+        didSet { saveParameter("PitchPStepSize", value: pitchPStepSize) }
+    }
+    @Published var pitchIStepSize: Double = 0.1 {
+        didSet { saveParameter("PitchIStepSize", value: pitchIStepSize) }
+    }
+    @Published var pitchIntegralLimitStepSize: Double = 0.1 {
+        didSet { saveParameter("PitchIntegralLimitStepSize", value: pitchIntegralLimitStepSize) }
+    }
+    
+    // Yaw Control
+    @Published var yawP: Double = 10.0 {
+        didSet { saveParameter("YawP", value: yawP) }
+    }
+    @Published var yawI: Double = 0.0 {
+        didSet { saveParameter("YawI", value: yawI) }
+    }
+    @Published var yawIntegralLimit: Double = 1.0 {
+        didSet { saveParameter("YawIntegralLimit", value: yawIntegralLimit) }
+    }
+    @Published var yawPStepSize: Double = 1.0 {
+        didSet { saveParameter("YawPStepSize", value: yawPStepSize) }
+    }
+    @Published var yawIStepSize: Double = 0.1 {
+        didSet { saveParameter("YawIStepSize", value: yawIStepSize) }
+    }
+    @Published var yawIntegralLimitStepSize: Double = 0.1 {
+        didSet { saveParameter("YawIntegralLimitStepSize", value: yawIntegralLimitStepSize) }
+    }
+    
     // Server parameters
     @Published var serverConnected: Bool = false {
         didSet { saveParameter("ServerConnected", value: serverConnected) }
@@ -77,22 +145,14 @@ class ParameterManager: ObservableObject {
         didSet { saveParameter("IsSynchronized", value: isSynchronized) }
     }
     
-    // Message queue handling
-    private var _messageQueue: [(type: UInt8, payload: Data)] = []
-    var messageQueue: [(type: UInt8, payload: Data)] {
-        get { queue.sync { _messageQueue } }
-        set { 
-            queue.sync { _messageQueue = newValue }
-            // Don't save message queue to UserDefaults as it's temporary
-        }
-    }
-    
+    // Message queue handling - removed from here as it should be in ServerCommunicationManager
     @Published var isProcessingMessage: Bool = false {
         didSet { saveParameter("IsProcessingMessage", value: isProcessingMessage) }
     }
     
     private var parameters: [String: Any] = [:]
-    private let queue = DispatchQueue(label: "com.me400.parametermanager", qos: .userInitiated)
+    // Changed to concurrent queue with proper label
+    private let parametersQueue = DispatchQueue(label: "com.me400.parametermanager", attributes: .concurrent)
     
     private init() {
         loadAllParameters()
@@ -101,9 +161,9 @@ class ParameterManager: ObservableObject {
     // MARK: - Persistence Methods
     
     private func saveParameter<T>(_ key: String, value: T) {
-        // First update the in-memory parameters synchronously
-        queue.sync {
-            parameters[key] = value
+        // First update the in-memory parameters with barrier for thread safety
+        parametersQueue.async(flags: .barrier) {
+            self.parameters[key] = value
         }
         
         // Then save to UserDefaults on the main thread
@@ -121,6 +181,10 @@ class ParameterManager: ObservableObject {
                 UserDefaults.standard.set(doubleValue, forKey: key)
             } else if let intValue = value as? Int {
                 UserDefaults.standard.set(intValue, forKey: key)
+            } else if let uint32Value = value as? UInt32 {
+                UserDefaults.standard.set(uint32Value, forKey: key)
+            } else if let uint8Value = value as? UInt8 {
+                UserDefaults.standard.set(uint8Value, forKey: key)
             } else if let arrayValue = value as? [String] {
                 UserDefaults.standard.set(arrayValue, forKey: key)
             }
@@ -154,12 +218,29 @@ class ParameterManager: ObservableObject {
         isSynchronized = loadParameter("IsSynchronized", defaultValue: false)
         isProcessingMessage = loadParameter("IsProcessingMessage", defaultValue: false)
         selectedMode = loadParameter("SelectedMode", defaultValue: "Manual")
+        tiltRoll = loadParameter("TiltRoll", defaultValue: 0.0)
+        tiltPitch = loadParameter("TiltPitch", defaultValue: 0.0)
+        launchCounter = loadParameter("LaunchCounter", defaultValue: nil)
+        launchThresholdN = loadParameter("LaunchThresholdN", defaultValue: 5)
+        lastLogMessage = loadParameter("LastLogMessage", defaultValue: "")
+        pitchP = loadParameter("PitchP", defaultValue: 10.0)
+        pitchI = loadParameter("PitchI", defaultValue: 0.0)
+        pitchIntegralLimit = loadParameter("PitchIntegralLimit", defaultValue: 1.0)
+        pitchPStepSize = loadParameter("PitchPStepSize", defaultValue: 1.0)
+        pitchIStepSize = loadParameter("PitchIStepSize", defaultValue: 0.1)
+        pitchIntegralLimitStepSize = loadParameter("PitchIntegralLimitStepSize", defaultValue: 0.1)
+        yawP = loadParameter("YawP", defaultValue: 10.0)
+        yawI = loadParameter("YawI", defaultValue: 0.0)
+        yawIntegralLimit = loadParameter("YawIntegralLimit", defaultValue: 1.0)
+        yawPStepSize = loadParameter("YawPStepSize", defaultValue: 1.0)
+        yawIStepSize = loadParameter("YawIStepSize", defaultValue: 0.1)
+        yawIntegralLimitStepSize = loadParameter("YawIntegralLimitStepSize", defaultValue: 0.1)
         
-        // Load all custom parameters
+        // Load all custom parameters with thread safety
         for key in UserDefaults.standard.dictionaryRepresentation().keys {
             if let value = UserDefaults.standard.object(forKey: key) {
-                queue.sync {
-                    parameters[key] = value
+                parametersQueue.async(flags: .barrier) {
+                    self.parameters[key] = value
                 }
             }
         }
@@ -168,9 +249,9 @@ class ParameterManager: ObservableObject {
     // MARK: - Parameter Management Methods
     
     func setParameter<T>(_ key: String, value: T) {
-        queue.sync {
-            // Store the value in the parameters dictionary
-            parameters[key] = value
+        // Store the value in the parameters dictionary with thread safety
+        parametersQueue.async(flags: .barrier) {
+            self.parameters[key] = value
         }
         
         // Save to UserDefaults
@@ -223,6 +304,74 @@ class ParameterManager: ObservableObject {
                 if let mode = value as? String {
                     self.selectedMode = mode
                 }
+            case "TiltRoll":
+                if let roll = value as? Double {
+                    self.tiltRoll = roll
+                }
+            case "TiltPitch":
+                if let pitch = value as? Double {
+                    self.tiltPitch = pitch
+                }
+            case "LaunchCounter":
+                if let counter = value as? UInt32? {
+                    self.launchCounter = counter
+                }
+            case "LaunchThresholdN":
+                if let threshold = value as? UInt8 {
+                    self.launchThresholdN = threshold
+                }
+            case "LastLogMessage":
+                if let message = value as? String {
+                    self.lastLogMessage = message
+                }
+            case "PitchP":
+                if let p = value as? Double {
+                    self.pitchP = p
+                }
+            case "PitchI":
+                if let i = value as? Double {
+                    self.pitchI = i
+                }
+            case "PitchIntegralLimit":
+                if let limit = value as? Double {
+                    self.pitchIntegralLimit = limit
+                }
+            case "PitchPStepSize":
+                if let stepSize = value as? Double {
+                    self.pitchPStepSize = stepSize
+                }
+            case "PitchIStepSize":
+                if let stepSize = value as? Double {
+                    self.pitchIStepSize = stepSize
+                }
+            case "PitchIntegralLimitStepSize":
+                if let stepSize = value as? Double {
+                    self.pitchIntegralLimitStepSize = stepSize
+                }
+            case "YawP":
+                if let p = value as? Double {
+                    self.yawP = p
+                }
+            case "YawI":
+                if let i = value as? Double {
+                    self.yawI = i
+                }
+            case "YawIntegralLimit":
+                if let limit = value as? Double {
+                    self.yawIntegralLimit = limit
+                }
+            case "YawPStepSize":
+                if let stepSize = value as? Double {
+                    self.yawPStepSize = stepSize
+                }
+            case "YawIStepSize":
+                if let stepSize = value as? Double {
+                    self.yawIStepSize = stepSize
+                }
+            case "YawIntegralLimitStepSize":
+                if let stepSize = value as? Double {
+                    self.yawIntegralLimitStepSize = stepSize
+                }
             default:
                 break
             }
@@ -230,13 +379,15 @@ class ParameterManager: ObservableObject {
     }
     
     func getParameter<T>(_ key: String, defaultValue: T) -> T {
-        queue.sync {
+        // Use sync to safely read from the concurrent queue
+        parametersQueue.sync {
             return parameters[key] as? T ?? defaultValue
         }
     }
     
     func hasParameter(_ key: String) -> Bool {
-        queue.sync {
+        // Use sync to safely read from the concurrent queue
+        parametersQueue.sync {
             return parameters[key] != nil
         }
     }

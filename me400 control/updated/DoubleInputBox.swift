@@ -92,7 +92,7 @@ struct DoubleInputBox: View {
                                 textValue = String(format: format, value)
                             }
                         }
-                        .onChange(of: value) { newValue in
+                        .onChange(of: value) { _, newValue in
                             if !isUpdatingFromUser {
                                 // Round to match the format's precision
                                 let roundedValue = round(newValue * pow(10, Double(format.count - 2))) / pow(10, Double(format.count - 2))
