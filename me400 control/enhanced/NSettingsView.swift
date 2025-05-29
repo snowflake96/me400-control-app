@@ -107,10 +107,12 @@ struct NSettingsView: View {
     private var pidTuningContent: some View {
         StepSizeRow(label: "Pitch P", value: $settingsStore.pitchPStepSize)
         StepSizeRow(label: "Pitch I", value: $settingsStore.pitchIStepSize)
-        StepSizeRow(label: "Pitch Limit", value: $settingsStore.pitchIntegralLimitStepSize)
+        StepSizeRow(label: "Pitch Integ Limit", value: $settingsStore.pitchIntegralLimitStepSize)
+        StepSizeRow(label: "Pitch Integ Thres", value: $settingsStore.pitchIntegralThresholdStepSize)
         StepSizeRow(label: "Yaw P", value: $settingsStore.yawPStepSize)
         StepSizeRow(label: "Yaw I", value: $settingsStore.yawIStepSize)
-        StepSizeRow(label: "Yaw Limit", value: $settingsStore.yawIntegralLimitStepSize)
+        StepSizeRow(label: "Yaw Integ Limit", value: $settingsStore.yawIntegralLimitStepSize)
+        StepSizeRow(label: "Yaw Integ Thres", value: $settingsStore.yawIntegralThresholdStepSize)
     }
     
     // Helper function with simpler signature
@@ -161,7 +163,7 @@ struct StepSizeRow: View {
     var body: some View {
         HStack {
             Text(label)
-                .frame(width: 100, alignment: .leading)
+                .frame(width: 140, alignment: .leading)
             
             Picker("", selection: $value) {
                 ForEach(stepOptions, id: \.self) { step in

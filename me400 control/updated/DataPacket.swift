@@ -27,6 +27,8 @@ enum DataPacketType: UInt8 {
     case setMaxConsecutiveNans = 23
     case setDefaultSpeed = 24
     case currentState = 25
+    case setPitchIntegralThreshold = 26
+    case setYawIntegralThreshold = 27
 }
 
 enum DataPacketData {
@@ -177,6 +179,16 @@ struct DataPacket {
     // Create a set yaw integral limit packet
     static func setYawIntegralLimit(_ value: Double) -> DataPacket {
         return DataPacket(type: .setYawIntegralLimit, data: .double(value))
+    }
+    
+    // Create a set pitch integral threshold packet
+    static func setPitchIntegralThreshold(_ value: Double) -> DataPacket {
+        return DataPacket(type: .setPitchIntegralThreshold, data: .double(value))
+    }
+    
+    // Create a set yaw integral threshold packet
+    static func setYawIntegralThreshold(_ value: Double) -> DataPacket {
+        return DataPacket(type: .setYawIntegralThreshold, data: .double(value))
     }
     
     // Create a set launch threshold packet

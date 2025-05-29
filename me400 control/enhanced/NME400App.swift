@@ -37,18 +37,22 @@ final class SettingsStore: ObservableObject {
     @AppStorage("pitchPStepSize") var pitchPStepSize: Double = 1.0
     @AppStorage("pitchIStepSize") var pitchIStepSize: Double = 0.1
     @AppStorage("pitchIntegralLimitStepSize") var pitchIntegralLimitStepSize: Double = 0.1
+    @AppStorage("pitchIntegralThresholdStepSize") var pitchIntegralThresholdStepSize: Double = 0.1
     
     @AppStorage("yawPStepSize") var yawPStepSize: Double = 1.0
     @AppStorage("yawIStepSize") var yawIStepSize: Double = 0.1
     @AppStorage("yawIntegralLimitStepSize") var yawIntegralLimitStepSize: Double = 0.1
+    @AppStorage("yawIntegralThresholdStepSize") var yawIntegralThresholdStepSize: Double = 0.1
     
     // Shared PID Values (between AutoAim and Autonomous)
     @Published var sharedPitchP: Double = 10.0
     @Published var sharedPitchI: Double = 0.0
     @Published var sharedPitchLimit: Double = 1.0
+    @Published var sharedPitchThreshold: Double = 0.025
     @Published var sharedYawP: Double = 10.0
     @Published var sharedYawI: Double = 0.0
     @Published var sharedYawLimit: Double = 1.0
+    @Published var sharedYawThreshold: Double = 0.025
     
     // Scene Settings
     @AppStorage("pipeLocation") var pipeLocation: Double = 1.5

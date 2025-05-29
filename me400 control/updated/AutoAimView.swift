@@ -100,7 +100,7 @@ struct PitchControl: View {
             VStack(spacing: 10) {
                 HStack(spacing: 15) {
                     DoubleInputBox(
-                        title: "Integral Limit",
+                        title: "Integ Limit",
                         value: $parameterManager.pitchIntegralLimit,
                         minValue: 0.0,
                         maxValue: 1000.0,
@@ -122,12 +122,49 @@ struct PitchControl: View {
                 Button(action: {
                     _ = serverManager.send(DataPacket.setPitchIntegralLimit(parameterManager.pitchIntegralLimit))
                 }) {
-                    Text("Send Integral Limit")
+                    Text("Send Integ Limit")
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(parameterManager.serverConnected ? Color.green : Color.gray)
+                        .cornerRadius(10)
+                }
+                .disabled(!parameterManager.serverConnected)
+            }
+            
+            // Integral Threshold
+            VStack(spacing: 10) {
+                HStack(spacing: 15) {
+                    DoubleInputBox(
+                        title: "Integ Thres",
+                        value: $parameterManager.pitchIntegralThreshold,
+                        minValue: 0.0,
+                        maxValue: 1.0,
+                        stepSize: parameterManager.pitchIntegralThresholdStepSize,
+                        format: "%.3f"
+                    )
+                    .id("pitchIntegralThreshold-\(parameterManager.pitchIntegralThresholdStepSize)")
+                    
+                    DoubleInputBox(
+                        title: "Thres Step",
+                        value: $parameterManager.pitchIntegralThresholdStepSize,
+                        minValue: 0.001,
+                        maxValue: 0.1,
+                        stepSize: 0.001,
+                        format: "%.3f"
+                    )
+                }
+                
+                Button(action: {
+                    _ = serverManager.send(DataPacket.setPitchIntegralThreshold(parameterManager.pitchIntegralThreshold))
+                }) {
+                    Text("Send Integ Thres")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(parameterManager.serverConnected ? Color.orange : Color.gray)
                         .cornerRadius(10)
                 }
                 .disabled(!parameterManager.serverConnected)
@@ -214,7 +251,7 @@ struct YawControl: View {
             VStack(spacing: 10) {
                 HStack(spacing: 15) {
                     DoubleInputBox(
-                        title: "Integral Limit",
+                        title: "Integ Limit",
                         value: $parameterManager.yawIntegralLimit,
                         minValue: 0.0,
                         maxValue: 1000.0,
@@ -236,12 +273,49 @@ struct YawControl: View {
                 Button(action: {
                     _ = serverManager.send(DataPacket.setYawIntegralLimit(parameterManager.yawIntegralLimit))
                 }) {
-                    Text("Send Integral Limit")
+                    Text("Send Integ Limit")
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(parameterManager.serverConnected ? Color.green : Color.gray)
+                        .cornerRadius(10)
+                }
+                .disabled(!parameterManager.serverConnected)
+            }
+            
+            // Integral Threshold
+            VStack(spacing: 10) {
+                HStack(spacing: 15) {
+                    DoubleInputBox(
+                        title: "Integ Thres",
+                        value: $parameterManager.yawIntegralThreshold,
+                        minValue: 0.0,
+                        maxValue: 1.0,
+                        stepSize: parameterManager.yawIntegralThresholdStepSize,
+                        format: "%.3f"
+                    )
+                    .id("yawIntegralThreshold-\(parameterManager.yawIntegralThresholdStepSize)")
+                    
+                    DoubleInputBox(
+                        title: "Thres Step",
+                        value: $parameterManager.yawIntegralThresholdStepSize,
+                        minValue: 0.001,
+                        maxValue: 0.1,
+                        stepSize: 0.001,
+                        format: "%.3f"
+                    )
+                }
+                
+                Button(action: {
+                    _ = serverManager.send(DataPacket.setYawIntegralThreshold(parameterManager.yawIntegralThreshold))
+                }) {
+                    Text("Send Integ Thres")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(parameterManager.serverConnected ? Color.orange : Color.gray)
                         .cornerRadius(10)
                 }
                 .disabled(!parameterManager.serverConnected)

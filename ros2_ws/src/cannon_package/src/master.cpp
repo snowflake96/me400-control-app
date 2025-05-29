@@ -59,18 +59,26 @@ MasterNode::~MasterNode() {
 void MasterNode::init_parameters_from_yaml(){
     // Declare all parameters
     this->declare_parameter("use_interpolation", false);
+    // Pitch
     this->declare_parameter("pid_pitch.kp", 1.0);
-    this->declare_parameter("pid_pitch.ki", 0.001);
+    this->declare_parameter("pid_pitch.ki", 0.0);
     this->declare_parameter("pid_pitch.integral_limit", 1.0);
+    this->declare_parameter("pid_pitch.integral_threshold", 1.0);
+    // Yaw
     this->declare_parameter("pid_yaw.kp", 1.0);
-    this->declare_parameter("pid_yaw.ki", 0.001);
+    this->declare_parameter("pid_yaw.ki", 0.0);
     this->declare_parameter("pid_yaw.integral_limit", 1.0);
-    this->declare_parameter("trigger.push", 170.0);
-    this->declare_parameter("trigger.retract", 55.0);
+    this->declare_parameter("pid_yaw.integral_threshold", 1.0);
+    // LPF
     this->declare_parameter("cutoff_frequency", 10.0);
+    // Trigger
+    this->declare_parameter("trigger.push", 166.0);
+    this->declare_parameter("trigger.retract", 70.0);
+    // Motor
     this->declare_parameter("stop_throttle", 0.0);
     this->declare_parameter("motor_offset", 0.0);
     this->declare_parameter("default_speed", 0.2);
+    // Launch
     this->declare_parameter("N", 10);
     this->declare_parameter("EPS", 0.005);
     this->declare_parameter("max_consecutive_nans", 5);
@@ -80,19 +88,13 @@ void MasterNode::init_parameters_from_yaml(){
         USE_INTERPOLATION = this->get_parameter("use_interpolation").as_bool();
 
         // Load PID parameters
-        pid_pitch_.setGains(
-            this->get_parameter("pid_pitch.kp").as_double(),
-            this->get_parameter("pid_pitch.ki").as_double(),
-            0.0
-        );
+        pid_pitch_.setGains(this->get_parameter("pid_pitch.kp").as_double(), this->get_parameter("pid_pitch.ki").as_double());
         pid_pitch_.setIntegralLimit(this->get_parameter("pid_pitch.integral_limit").as_double());
+        pid_pitch_.setIntegralThreshold(this->get_parameter("pid_pitch.integral_threshold").as_double());
         
-        pid_yaw_.setGains(
-            this->get_parameter("pid_yaw.kp").as_double(),
-            this->get_parameter("pid_yaw.ki").as_double(),
-            0.0
-        );
+        pid_yaw_.setGains(this->get_parameter("pid_yaw.kp").as_double(), this->get_parameter("pid_yaw.ki").as_double());
         pid_yaw_.setIntegralLimit(this->get_parameter("pid_yaw.integral_limit").as_double());
+        pid_yaw_.setIntegralThreshold(this->get_parameter("pid_yaw.integral_threshold").as_double());
 
         // Trigger angles
         push_ = this->get_parameter("trigger.push").as_double();
@@ -110,16 +112,14 @@ void MasterNode::init_parameters_from_yaml(){
 
         launch_threshold_.N = this->get_parameter("N").as_int(); 
         launch_threshold_.EPS = this->get_parameter("EPS").as_double(); 
-        pid_pitch_.setIntegralThreshold(5 * launch_threshold_.EPS.load());
-        pid_yaw_.setIntegralThreshold(5 * launch_threshold_.EPS.load());
         max_consecutive_nans_ = this->get_parameter("max_consecutive_nans").as_int();
         
         RCLCPP_INFO(this->get_logger(), "Successfully loaded parameters:");
         RCLCPP_INFO(this->get_logger(), "  use_interpolation: %s", USE_INTERPOLATION ? "true" : "false");
         auto [pitch_kp, pitch_ki] = pid_pitch_.getPIgains();
+        RCLCPP_INFO(this->get_logger(), "  PID pitch - kp: %.3f, ki: %.3f, integral_limit: %.3f, integral_threshold: %.3f", pitch_kp, pitch_ki, pid_pitch_.getIntegralLimit(), pid_pitch_.getIntegralThreshold());
         auto [yaw_kp, yaw_ki] = pid_yaw_.getPIgains();
-        RCLCPP_INFO(this->get_logger(), "  PID pitch - kp: %.3f, ki: %.3f, integral_limit: %.3f", pitch_kp, pitch_ki, pid_pitch_.getIntegralLimit());
-        RCLCPP_INFO(this->get_logger(), "  PID yaw - kp: %.3f, ki: %.3f, integral_limit: %.3f", yaw_kp, yaw_ki, pid_yaw_.getIntegralLimit());
+        RCLCPP_INFO(this->get_logger(), "  PID yaw - kp: %.3f, ki: %.3f, integral_limit: %.3f, integral_threshold: %.3f", yaw_kp, yaw_ki, pid_yaw_.getIntegralLimit(), pid_yaw_.getIntegralThreshold());
         RCLCPP_INFO(this->get_logger(), "  Trigger angles - push: %.1f, retract: %.1f", push_, retract_);
         RCLCPP_INFO(this->get_logger(), "  Cutoff frequency: %.1f Hz", lpf_x.getCutoffFrequency());
         RCLCPP_INFO(this->get_logger(), "  Motor params - stop_throttle: %.2f, offset: %.2f, default_speed: %.2f", stop_throttle_, motor_offset_, DEFAULT_SPEED_);
@@ -173,12 +173,12 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
       break;
 
     case DataPacket::Type::TunePitch:
-      pid_pitch_.setGains(v.x, v.y, v.z); // v.z is not used
+      pid_pitch_.setGains(v.x, v.y);
       log_msg = std::format("Set pitch gains – Kp: {:.3f}, Ki: {:.3f}", v.x, v.y);
       break;
 
     case DataPacket::Type::TuneYaw:
-      pid_yaw_.setGains(v.x, v.y, v.z); // v.z is not used
+      pid_yaw_.setGains(v.x, v.y);
       log_msg = std::format("Set yaw gains – Kp: {:.3f}, Ki: {:.3f}", v.x, v.y);
       break;
 
@@ -229,6 +229,7 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
     case DataPacket::Type::SetAutoAim:
       if(mode_ != Mode::AutoAim){
         mode_ = Mode::AutoAim;
+        reset();
         log_msg = "Set to automatic aim mode";
       }
       else{
@@ -429,7 +430,6 @@ void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr m
   if(std::isnan(x1)){
     if(++nan_counter == max_consecutive_nans_){
       send_servo_command(0.0, 0.0); // Stop the servos
-      reset(); // This resets both the launch counter and the found_offset flag
       std::string log_msg = std::format("No detection for {} consecutive times. Stopping servos.", max_consecutive_nans_);
       RCLCPP_INFO(this->get_logger(), log_msg.c_str());
       server_.sendLogToClient(log_msg);
@@ -438,6 +438,7 @@ void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr m
   }
   else if(nan_counter > 0){
     nan_counter = 0;
+    reset(); // This resets both the launch counter and the found_offset flag
     const char* log_msg = "New bbox detection. Re-enabling servos.";
     RCLCPP_INFO(this->get_logger(), log_msg);
     server_.sendLogToClient(log_msg);

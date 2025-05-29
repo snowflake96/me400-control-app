@@ -97,7 +97,6 @@ private:
   inline static bool USE_INTERPOLATION;
   inline static uint32_t max_consecutive_nans_;
   inline static double DEFAULT_SPEED_ = 0.2; // Default ESC value (for autonomous mode)
-  LowPassFilter lpf_x, lpf_y;
   
   // Publishers
   rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr servo_command_pub_;
@@ -111,6 +110,7 @@ private:
   
   rclcpp::TimerBase::SharedPtr timer_;
   
+  LowPassFilter lpf_x, lpf_y;
   PID pid_pitch_, pid_yaw_;
   
   CubicSpline spline_;

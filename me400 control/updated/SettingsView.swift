@@ -571,79 +571,229 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            // Server Connection Settings
-            VStack(spacing: 20) {
-                ServerConnectingView()
-                
-                // Frequently Used Connections
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Frequent Connections")
-                        .font(.headline)
-                        .padding(.horizontal)
+        NavigationView {
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Settings")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .padding()
                     
-                    ForEach(frequentConnections, id: \.id) { connection in
+                    Spacer()
+                    
+                    HStack(spacing: 20) {
                         Button(action: {
-                            parameterManager.serverHost = connection.host
-                            parameterManager.serverPort = connection.port
+                            showingResetAlert = true
                         }) {
-                            HStack {
-                                Text(connection.host)
-                                    .foregroundColor(.primary)
-                                Text(":")
-                                    .foregroundColor(.gray)
-                                Text(connection.port)
-                                    .foregroundColor(.primary)
-                            }
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(6)
+                            Label("Reset", systemImage: "arrow.counterclockwise")
+                                .foregroundColor(.red)
                         }
-                        .disabled(parameterManager.serverConnected)
-                        .padding(.horizontal)
+                        .alert("Reset All Settings?", isPresented: $showingResetAlert) {
+                            Button("Cancel", role: .cancel) { }
+                            Button("Reset", role: .destructive) {
+                                resetAllParameters()
+                            }
+                        } message: {
+                            Text("This will reset all parameters to their default values.")
+                        }
+                        
+                        Button(action: {
+                            // Save action (parameters are auto-saved via UserDefaults)
+                            showingSaveAlert = true
+                        }) {
+                            Label("Save", systemImage: "checkmark.circle")
+                        }
+                        .alert("Settings Saved", isPresented: $showingSaveAlert) {
+                            Button("OK", role: .cancel) { }
+                        }
+                    }
+                    .padding(.trailing)
+                }
+                
+                // Tab selection
+                Picker("Settings Section", selection: $selectedTab) {
+                    Text("Connection").tag(0)
+                    Text("Motor").tag(1)
+                    Text("Tree").tag(2)
+                    Text("View").tag(3)
+                    Text("PID Step Sizes").tag(4)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding()
+                
+                // Tab content
+                ScrollView {
+                    switch selectedTab {
+                    case 0:
+                        ConnectionSettings()
+                    case 1:
+                        MotorSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
+                    case 2:
+                        TreeSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
+                    case 3:
+                        ViewSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
+                    case 4:
+                        PIDStepSizesSettings()
+                    default:
+                        ConnectionSettings()
                     }
                 }
-                .padding(.vertical)
             }
-            .tabItem {
-                Label("Connection", systemImage: "network")
-            }
-            .tag(0)
-            
-            // Motor Settings
-            MotorSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
-            .tabItem {
-                Label("Motor", systemImage: "gearshape.2")
-            }
-            .tag(1)
-            
-            // Tree Settings (Combined Pipe, Bell, and Aluminium)
-            TreeSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
-            .tabItem {
-                Label("Tree", systemImage: "leaf")
-            }
-            .tag(2)
-            
-            // View Settings
-            ViewSettingsView(showingResetAlert: $showingResetAlert, saveAllParameters: saveAllParameters)
-            .tabItem {
-                Label("View", systemImage: "eye")
-            }
-            .tag(3)
         }
-        .alert("Settings Saved", isPresented: $showingSaveAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("All parameter values have been saved to app storage.")
-        }
-        .alert("Reset All Settings", isPresented: $showingResetAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
-                resetAllParameters()
+    }
+}
+
+// MARK: - Connection Settings
+struct ConnectionSettings: View {
+    @ObservedObject private var parameterManager = ParameterManager.shared
+    
+    // List of frequently used server connections
+    private let frequentConnections: [(id: String, host: String, port: String)] = [
+        ("100.121.85.128:12345", "100.121.85.128", "12345"),
+        ("100.121.85.128:12346", "100.121.85.128", "12346"),
+        ("localhost:12345", "localhost", "12345"),
+        ("100.102.243.9:12345", "100.102.243.9", "12345"),
+        ("100.102.243.9:12346", "100.102.243.9", "12346")
+    ]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            ServerConnectingView()
+            
+            // Frequently Used Connections
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Frequent Connections")
+                    .font(.headline)
+                    .padding(.horizontal)
+                
+                ForEach(frequentConnections, id: \.id) { connection in
+                    Button(action: {
+                        parameterManager.serverHost = connection.host
+                        parameterManager.serverPort = connection.port
+                    }) {
+                        HStack {
+                            Text(connection.host)
+                                .foregroundColor(.primary)
+                            Text(":")
+                                .foregroundColor(.gray)
+                            Text(connection.port)
+                                .foregroundColor(.primary)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                    .disabled(parameterManager.serverConnected)
+                    .padding(.horizontal)
+                }
             }
-        } message: {
-            Text("Are you sure you want to reset all settings to their default values? This action cannot be undone.")
+            .padding(.vertical)
+        }
+    }
+}
+
+// MARK: - PID Step Sizes Settings
+struct PIDStepSizesSettings: View {
+    @ObservedObject private var parameterManager = ParameterManager.shared
+    
+    let stepOptions: [Double] = [0.001, 0.01, 0.1, 1.0, 10.0]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("PID Tuning Step Sizes")
+                .font(.title2)
+                .fontWeight(.bold)
+                .padding(.top)
+            
+            VStack(alignment: .leading, spacing: 15) {
+                Text("Pitch Control Step Sizes")
+                    .font(.headline)
+                    .padding(.horizontal)
+                
+                StepSizePickerRow(
+                    label: "Pitch P",
+                    value: $parameterManager.pitchPStepSize,
+                    options: stepOptions
+                )
+                
+                StepSizePickerRow(
+                    label: "Pitch I",
+                    value: $parameterManager.pitchIStepSize,
+                    options: stepOptions
+                )
+                
+                StepSizePickerRow(
+                    label: "Pitch Integ Limit",
+                    value: $parameterManager.pitchIntegralLimitStepSize,
+                    options: stepOptions
+                )
+                
+                StepSizePickerRow(
+                    label: "Pitch Integ Thres",
+                    value: $parameterManager.pitchIntegralThresholdStepSize,
+                    options: stepOptions
+                )
+                
+                Divider()
+                    .padding(.vertical)
+                
+                Text("Yaw Control Step Sizes")
+                    .font(.headline)
+                    .padding(.horizontal)
+                
+                StepSizePickerRow(
+                    label: "Yaw P",
+                    value: $parameterManager.yawPStepSize,
+                    options: stepOptions
+                )
+                
+                StepSizePickerRow(
+                    label: "Yaw I",
+                    value: $parameterManager.yawIStepSize,
+                    options: stepOptions
+                )
+                
+                StepSizePickerRow(
+                    label: "Yaw Integ Limit",
+                    value: $parameterManager.yawIntegralLimitStepSize,
+                    options: stepOptions
+                )
+                
+                StepSizePickerRow(
+                    label: "Yaw Integ Thres",
+                    value: $parameterManager.yawIntegralThresholdStepSize,
+                    options: stepOptions
+                )
+            }
+            .padding(.vertical)
+            
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Step Size Picker Row
+struct StepSizePickerRow: View {
+    let label: String
+    @Binding var value: Double
+    let options: [Double]
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .frame(width: 140, alignment: .leading)
+                .padding(.leading)
+            
+            Picker("", selection: $value) {
+                ForEach(options, id: \.self) { step in
+                    Text(String(format: step < 1 ? "%.3f" : "%.0f", step))
+                        .tag(step)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.trailing)
         }
     }
 }

@@ -31,8 +31,17 @@ final class ControlCoordinator: ObservableObject {
     private weak var settingsStore: SettingsStore?
     
     // Latency tracking
-    private var lastQueryTime: Date?
+    private var _lastQueryTime: Date?
     private let latencyQueue = DispatchQueue(label: "com.me400.latency")
+    
+    private var lastQueryTime: Date? {
+        get {
+            latencyQueue.sync { _lastQueryTime }
+        }
+        set {
+            latencyQueue.sync { _lastQueryTime = newValue }
+        }
+    }
     
     // MARK: - Initialization
     
@@ -144,9 +153,7 @@ final class ControlCoordinator: ObservableObject {
         isSynchronized = false
         
         // Reset latency tracking
-        latencyQueue.async {
-            self.lastQueryTime = nil
-        }
+        lastQueryTime = nil
         
         // Reset latency to 0 for clean UI
         DispatchQueue.main.async {
@@ -239,6 +246,16 @@ final class ControlCoordinator: ObservableObject {
         try await networkManager.send(packet)
     }
     
+    func setPitchIntegralThreshold(_ threshold: Double) async throws {
+        let packet = PacketFactory.setPitchIntegralThreshold(threshold)
+        try await networkManager.send(packet)
+    }
+    
+    func setYawIntegralThreshold(_ threshold: Double) async throws {
+        let packet = PacketFactory.setYawIntegralThreshold(threshold)
+        try await networkManager.send(packet)
+    }
+    
     // MARK: - Configuration
     
     func setOffset(x: Double, y: Double, z: Double) async throws {
@@ -283,9 +300,7 @@ final class ControlCoordinator: ObservableObject {
     
     func sendQuery() async throws {
         // Track query time for latency calculation
-        latencyQueue.async {
-            self.lastQueryTime = Date()
-        }
+        lastQueryTime = Date()
         
         let packet = PacketFactory.query()
         try await networkManager.send(packet)
@@ -356,18 +371,16 @@ final class ControlCoordinator: ObservableObject {
     // MARK: - Latency Update
     
     func updateLatency() {
-        latencyQueue.async { [weak self] in
-            guard let self = self,
-                  let queryTime = self.lastQueryTime else { 
-                // If no query time, don't update latency (keep last value or 0)
-                return 
-            }
-            
-            let currentLatency = Date().timeIntervalSince(queryTime)
-            
-            DispatchQueue.main.async {
-                self.latency = currentLatency
-            }
+        let queryTime = lastQueryTime
+        guard let queryTime = queryTime else {
+            // If no query time, don't update latency (keep last value or 0)
+            return
+        }
+        
+        let currentLatency = Date().timeIntervalSince(queryTime)
+        
+        DispatchQueue.main.async {
+            self.latency = currentLatency
         }
     }
     

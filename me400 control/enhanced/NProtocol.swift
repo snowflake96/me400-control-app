@@ -46,6 +46,8 @@ enum PacketType: UInt8, CaseIterable {
     case setMaxConsecutiveNans = 23
     case setDefaultSpeed = 24
     case currentState = 25
+    case setPitchIntegralThreshold = 26
+    case setYawIntegralThreshold = 27
     
     var description: String {
         switch self {
@@ -75,6 +77,8 @@ enum PacketType: UInt8, CaseIterable {
         case .setMaxConsecutiveNans: return "Set Max Consecutive NANs"
         case .setDefaultSpeed: return "Set Default Speed"
         case .currentState: return "Current State"
+        case .setPitchIntegralThreshold: return "Set Pitch Integral Threshold"
+        case .setYawIntegralThreshold: return "Set Yaw Integral Threshold"
         }
     }
 }
@@ -318,6 +322,14 @@ enum PacketFactory {
     
     static func setYawIntegralLimit(_ value: Double) -> Packet {
         Packet(type: .setYawIntegralLimit, payload: DoublePayload(value: value))
+    }
+    
+    static func setPitchIntegralThreshold(_ value: Double) -> Packet {
+        Packet(type: .setPitchIntegralThreshold, payload: DoublePayload(value: value))
+    }
+    
+    static func setYawIntegralThreshold(_ value: Double) -> Packet {
+        Packet(type: .setYawIntegralThreshold, payload: DoublePayload(value: value))
     }
     
     static func setLaunchThreshold(epsilon: Double, n: UInt8) -> Packet {

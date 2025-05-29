@@ -191,6 +191,17 @@ class ServerCommunicationManager: ObservableObject {
         if !ParameterManager.shared.hasParameter("YawIntegralLimitStepSize") {
             ParameterManager.shared.setParameter("YawIntegralLimitStepSize", value: 0.1)
         }
+        if !ParameterManager.shared.hasParameter("YawIntegralThreshold") {
+            ParameterManager.shared.setParameter("YawIntegralThreshold", value: 0.025)
+        }
+        if !ParameterManager.shared.hasParameter("YawIntegralThresholdStepSize") {
+            ParameterManager.shared.setParameter("YawIntegralThresholdStepSize", value: 0.01)
+        }
+        
+        // Initialize client-side parameters with default values
+        if !ParameterManager.shared.hasParameter("LaunchThresholdEpsilon") {
+            ParameterManager.shared.setParameter("LaunchThresholdEpsilon", value: 0.005)
+        }
     }
     
     // Call this in your App's init or first view
@@ -642,6 +653,12 @@ class ServerCommunicationManager: ObservableObject {
         case 24: // SetDefaultSpeed
             let speed = readDouble(at: 0, from: payload)
             messageText = "Received SetDefaultSpeed: \(speed)"
+        case 26: // SetPitchIntegralThreshold
+            let threshold = readDouble(at: 0, from: payload)
+            messageText = "Received SetPitchIntegralThreshold: \(threshold)"
+        case 27: // SetYawIntegralThreshold
+            let threshold = readDouble(at: 0, from: payload)
+            messageText = "Received SetYawIntegralThreshold: \(threshold)"
         default:
             messageText = "Received packet type unhandled: type=\(type)"
         }

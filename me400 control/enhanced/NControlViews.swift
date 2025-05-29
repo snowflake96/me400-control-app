@@ -232,6 +232,13 @@ struct PIDControlView: View {
                         step: settingsStore.pitchIntegralLimitStepSize
                     )
                     
+                    NumericInputRow(
+                        label: "I Thres",
+                        value: $settingsStore.sharedPitchThreshold,
+                        range: 0...1,
+                        step: settingsStore.pitchIntegralThresholdStepSize
+                    )
+                    
                     HStack {
                         Button("Send PI") {
                             Task {
@@ -243,6 +250,13 @@ struct PIDControlView: View {
                         Button("Send Limit") {
                             Task {
                                 try? await coordinator.setPitchIntegralLimit(settingsStore.sharedPitchLimit)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Send Thres") {
+                            Task {
+                                try? await coordinator.setPitchIntegralThreshold(settingsStore.sharedPitchThreshold)
                             }
                         }
                         .buttonStyle(.bordered)
@@ -278,6 +292,13 @@ struct PIDControlView: View {
                         step: settingsStore.yawIntegralLimitStepSize
                     )
                     
+                    NumericInputRow(
+                        label: "I Thres",
+                        value: $settingsStore.sharedYawThreshold,
+                        range: 0...1,
+                        step: settingsStore.yawIntegralThresholdStepSize
+                    )
+                    
                     HStack {
                         Button("Send PI") {
                             Task {
@@ -289,6 +310,13 @@ struct PIDControlView: View {
                         Button("Send Limit") {
                             Task {
                                 try? await coordinator.setYawIntegralLimit(settingsStore.sharedYawLimit)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Send Thres") {
+                            Task {
+                                try? await coordinator.setYawIntegralThreshold(settingsStore.sharedYawThreshold)
                             }
                         }
                         .buttonStyle(.bordered)

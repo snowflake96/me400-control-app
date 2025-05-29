@@ -87,6 +87,9 @@ class ParameterManager: ObservableObject {
     @Published var pitchIntegralLimit: Double = 1.0 {
         didSet { saveParameter("PitchIntegralLimit", value: pitchIntegralLimit) }
     }
+    @Published var pitchIntegralThreshold: Double = 0.025 {
+        didSet { saveParameter("PitchIntegralThreshold", value: pitchIntegralThreshold) }
+    }
     @Published var pitchPStepSize: Double = 1.0 {
         didSet { saveParameter("PitchPStepSize", value: pitchPStepSize) }
     }
@@ -95,6 +98,9 @@ class ParameterManager: ObservableObject {
     }
     @Published var pitchIntegralLimitStepSize: Double = 0.1 {
         didSet { saveParameter("PitchIntegralLimitStepSize", value: pitchIntegralLimitStepSize) }
+    }
+    @Published var pitchIntegralThresholdStepSize: Double = 0.01 {
+        didSet { saveParameter("PitchIntegralThresholdStepSize", value: pitchIntegralThresholdStepSize) }
     }
     
     // Yaw Control
@@ -107,6 +113,9 @@ class ParameterManager: ObservableObject {
     @Published var yawIntegralLimit: Double = 1.0 {
         didSet { saveParameter("YawIntegralLimit", value: yawIntegralLimit) }
     }
+    @Published var yawIntegralThreshold: Double = 0.025 {
+        didSet { saveParameter("YawIntegralThreshold", value: yawIntegralThreshold) }
+    }
     @Published var yawPStepSize: Double = 1.0 {
         didSet { saveParameter("YawPStepSize", value: yawPStepSize) }
     }
@@ -115,6 +124,9 @@ class ParameterManager: ObservableObject {
     }
     @Published var yawIntegralLimitStepSize: Double = 0.1 {
         didSet { saveParameter("YawIntegralLimitStepSize", value: yawIntegralLimitStepSize) }
+    }
+    @Published var yawIntegralThresholdStepSize: Double = 0.01 {
+        didSet { saveParameter("YawIntegralThresholdStepSize", value: yawIntegralThresholdStepSize) }
     }
     
     // Server parameters
@@ -226,15 +238,19 @@ class ParameterManager: ObservableObject {
         pitchP = loadParameter("PitchP", defaultValue: 10.0)
         pitchI = loadParameter("PitchI", defaultValue: 0.0)
         pitchIntegralLimit = loadParameter("PitchIntegralLimit", defaultValue: 1.0)
+        pitchIntegralThreshold = loadParameter("PitchIntegralThreshold", defaultValue: 0.025)
         pitchPStepSize = loadParameter("PitchPStepSize", defaultValue: 1.0)
         pitchIStepSize = loadParameter("PitchIStepSize", defaultValue: 0.1)
         pitchIntegralLimitStepSize = loadParameter("PitchIntegralLimitStepSize", defaultValue: 0.1)
+        pitchIntegralThresholdStepSize = loadParameter("PitchIntegralThresholdStepSize", defaultValue: 0.01)
         yawP = loadParameter("YawP", defaultValue: 10.0)
         yawI = loadParameter("YawI", defaultValue: 0.0)
         yawIntegralLimit = loadParameter("YawIntegralLimit", defaultValue: 1.0)
+        yawIntegralThreshold = loadParameter("YawIntegralThreshold", defaultValue: 0.025)
         yawPStepSize = loadParameter("YawPStepSize", defaultValue: 1.0)
         yawIStepSize = loadParameter("YawIStepSize", defaultValue: 0.1)
         yawIntegralLimitStepSize = loadParameter("YawIntegralLimitStepSize", defaultValue: 0.1)
+        yawIntegralThresholdStepSize = loadParameter("YawIntegralThresholdStepSize", defaultValue: 0.01)
         
         // Load all custom parameters with thread safety
         for key in UserDefaults.standard.dictionaryRepresentation().keys {
@@ -336,6 +352,10 @@ class ParameterManager: ObservableObject {
                 if let limit = value as? Double {
                     self.pitchIntegralLimit = limit
                 }
+            case "PitchIntegralThreshold":
+                if let threshold = value as? Double {
+                    self.pitchIntegralThreshold = threshold
+                }
             case "PitchPStepSize":
                 if let stepSize = value as? Double {
                     self.pitchPStepSize = stepSize
@@ -347,6 +367,10 @@ class ParameterManager: ObservableObject {
             case "PitchIntegralLimitStepSize":
                 if let stepSize = value as? Double {
                     self.pitchIntegralLimitStepSize = stepSize
+                }
+            case "PitchIntegralThresholdStepSize":
+                if let stepSize = value as? Double {
+                    self.pitchIntegralThresholdStepSize = stepSize
                 }
             case "YawP":
                 if let p = value as? Double {
@@ -360,6 +384,10 @@ class ParameterManager: ObservableObject {
                 if let limit = value as? Double {
                     self.yawIntegralLimit = limit
                 }
+            case "YawIntegralThreshold":
+                if let threshold = value as? Double {
+                    self.yawIntegralThreshold = threshold
+                }
             case "YawPStepSize":
                 if let stepSize = value as? Double {
                     self.yawPStepSize = stepSize
@@ -371,6 +399,10 @@ class ParameterManager: ObservableObject {
             case "YawIntegralLimitStepSize":
                 if let stepSize = value as? Double {
                     self.yawIntegralLimitStepSize = stepSize
+                }
+            case "YawIntegralThresholdStepSize":
+                if let stepSize = value as? Double {
+                    self.yawIntegralThresholdStepSize = stepSize
                 }
             default:
                 break

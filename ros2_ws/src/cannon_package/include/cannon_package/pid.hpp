@@ -12,22 +12,12 @@ Created by: You, Jisang on 2025 April 5th
 
 class LowPassFilter {
 private:
-    // time constant RC = 1/(2π f_c)
-    double RC_;            
-
-    // last output
-    double y_prev_;        
-
-    // Cutoff frequency
-    double cutoff_freq_;
-
-    // flag for first sample
-    bool   initialized_;    
-
-    // timestamp of the last filter() call
-    using Clock      = std::chrono::steady_clock;
-    Clock::time_point t_prev_;  
-
+    using Clock = std::chrono::steady_clock;
+    double RC_;            // time constant RC = 1/(2π f_c)
+    double y_prev_;        // last output
+    double cutoff_freq_;   // Cutoff frequency
+    bool   initialized_;   // flag for first sample
+    Clock::time_point t_prev_;  // timestamp of the last filter() call
 public:
     // f_c = cutoff frequency [Hz]
     LowPassFilter(double cutoff_hz = 5.0)
@@ -40,16 +30,14 @@ public:
         assert(cutoff_hz > 0);
     }
 
-    // Call this on each new sample; dt is computed internally.
-    double filter(double x){
+    double filter(double x) {
         if (std::isnan(x))
             return y_prev_;
     
         if (!initialized_) {
-            // first sample – no history, no dt needed
-            y_prev_      = x;
+            y_prev_ = x;
             initialized_ = true;
-            t_prev_      = Clock::now();
+            t_prev_ = Clock::now();
             return y_prev_;
         }
     
@@ -69,7 +57,6 @@ public:
         initialized_ = false;
     }
 
-    // Change cutoff frequency on the fly
     void setCutoffFrequency(double cutoff_hz) {
         cutoff_freq_ = std::abs(cutoff_hz);
         RC_ = 1.0 / (2.0 * M_PI * cutoff_freq_);
@@ -98,15 +85,20 @@ class PID {
 public:
     PID() : last_time_(nowSeconds()) {}
     
-    void setGains(double kp, double ki, double kd) { Kp_=kp; Ki_=ki; Kd_=kd; }
+    void setGains(double kp, double ki, double kd=0.0) { Kp_=kp; Ki_=ki; Kd_=kd; } // D gain unused
+    std::pair<double, double> getPIgains(){ return {Kp_, Ki_}; }
+
     void setIntegralLimit(double lim) { integral_limit_=lim; }
-    void setIntegralThreshold(double threshold){ integral_threshold_ = std::abs(threshold); }
     double getIntegralLimit() const { return integral_limit_; }
-    void reset() { integral_=0.0; first_call_=true; }
+
+    void setIntegralThreshold(double threshold){ integral_threshold_ = std::abs(threshold); }
+    double getIntegralThreshold() const { return integral_threshold_; }
+
     double getLastError() { return error_; }
     double getLastPsignal() const { return psignal_; }
     double getLastIsignal() const { return isignal_; }
-    std::pair<double, double> getPIgains(){ return {Kp_, Ki_}; }
+
+    void reset() { integral_=0.0; first_call_=true; }
 
     double compute(double setpoint, double measured)
     {

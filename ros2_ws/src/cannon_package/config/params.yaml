@@ -5,13 +5,15 @@ master_node:
     # PID control parameters
     pid_pitch:
       kp: 1.0
-      ki: 0.001
+      ki: 0.0
       integral_limit: 1.0
+      integral_threshold: 1.0
     
     pid_yaw:
       kp: 1.0
-      ki: 0.001
+      ki: 0.0
       integral_limit: 1.0
+      integral_threshold: 1.0
 
     # Trigger servo motor push retract angles
     trigger:
