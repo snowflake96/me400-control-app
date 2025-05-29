@@ -11,18 +11,30 @@ struct SystemState {
     var drivingMode: DrivingMode = .manual
     var isRunning: Bool = false
     
-    // Server's reported mode (for comparison)
+    // Server's reported state (for display in ServerStateView)
     var serverMode: DrivingMode? = nil
+    var serverIsRunning: Bool? = nil
+    var serverLaunchCounter: UInt32? = nil
+    var serverLaunchThresholdN: UInt8? = nil
+    var serverLaunchThresholdEps: Double? = nil
+    var serverTargetX: Double? = nil
+    var serverTargetY: Double? = nil
+    var serverStopThrottle: Double? = nil
+    var serverMotorOffset: Double? = nil
+    var serverDefaultSpeed: Double? = nil
+    var serverCutoffFrequency: Double? = nil
     
     // Parameters
     var launchCounter: UInt32 = 0
-    var maxConsecutiveNans: UInt32 = 10
+    var maxConsecutiveNans: UInt32 = 20  // Client-managed, not from server CurrentState
+    var launchThresholdN: UInt8 = 10      // From server
+    var launchThresholdEps: Double = 0.005 // From server
     var targetX: Double = 0.0
     var targetY: Double = 0.0
     var stopThrottle: Double = 0.0
     var motorOffset: Double = 0.0
-    var defaultSpeed: Double = 1.0
-    var cutoffFrequency: Double = 10.0
+    var defaultSpeed: Double = 0.0
+    var cutoffFrequency: Double = 20.0
     
     // PID Parameters
     var pitchP: Double = 10.0
@@ -84,6 +96,7 @@ protocol SystemStateManagerProtocol: AnyObject {
     func isSynchronized() -> Bool
     func updateDrivingMode(_ mode: DrivingMode)
     func updateRunningState(_ isRunning: Bool)
+    func setCurrentStateCallback(_ callback: @escaping () -> Void)
 }
 
 // MARK: - System State Manager
@@ -105,12 +118,20 @@ final class SystemStateManager: SystemStateManagerProtocol {
     
     // Add synchronization callback
     private var onSynchronized: (() -> Void)?
+    private var onCurrentStateReceived: (() -> Void)?
+    private var isProcessingSyncPacket = false
     
     // MARK: - Public Methods
     
     func setSynchronizationCallback(_ callback: @escaping () -> Void) {
         queue.async(flags: .barrier) {
             self.onSynchronized = callback
+        }
+    }
+    
+    func setCurrentStateCallback(_ callback: @escaping () -> Void) {
+        queue.async(flags: .barrier) {
+            self.onCurrentStateReceived = callback
         }
     }
     
@@ -168,6 +189,8 @@ final class SystemStateManager: SystemStateManagerProtocol {
                 // Reset real-time data on disconnect
                 state.boundingBox = nil
                 state.filteredBoundingBox = nil
+                // Clear log messages on disconnect
+                state.lastLogMessage = ""
             }
         }
     }
@@ -175,7 +198,9 @@ final class SystemStateManager: SystemStateManagerProtocol {
     func reset() {
         queue.async(flags: .barrier) {
             self.hasSynchronized = false
+            self.isProcessingSyncPacket = false
             self.onSynchronized = nil
+            self.onCurrentStateReceived = nil
         }
         stateSubject.send(SystemState())
     }
@@ -183,76 +208,116 @@ final class SystemStateManager: SystemStateManagerProtocol {
     // MARK: - Private Processing Methods
     
     private func processCurrentState(_ payload: Data) {
-        guard payload.count >= 58 else { return }
+        guard payload.count >= 63 else { return }  // Updated size (1+1+4+1+8*6 = 63)
+        
+        // Notify that CurrentState was received (for latency tracking)
+        if let callback = onCurrentStateReceived {
+            DispatchQueue.main.async {
+                callback()
+            }
+        }
         
         let mode = PacketDecoder.readUInt8(at: 0, from: payload)
         let systemState = PacketDecoder.readUInt8(at: 1, from: payload)
         let launchCounter = PacketDecoder.readUInt32(at: 2, from: payload)
-        let maxConsecutiveNans = PacketDecoder.readUInt32(at: 6, from: payload)
-        let targetX = PacketDecoder.readDouble(at: 10, from: payload)
-        let targetY = PacketDecoder.readDouble(at: 18, from: payload)
-        let stopThrottle = PacketDecoder.readDouble(at: 26, from: payload)
-        let motorOffset = PacketDecoder.readDouble(at: 34, from: payload)
-        let defaultSpeed = PacketDecoder.readDouble(at: 42, from: payload)
-        let cutoffFreq = PacketDecoder.readDouble(at: 50, from: payload)
+        let n = PacketDecoder.readUInt8(at: 6, from: payload)
+        let eps = PacketDecoder.readDouble(at: 7, from: payload)
+        let targetX = PacketDecoder.readDouble(at: 15, from: payload)
+        let targetY = PacketDecoder.readDouble(at: 23, from: payload)
+        let stopThrottle = PacketDecoder.readDouble(at: 31, from: payload)
+        let motorOffset = PacketDecoder.readDouble(at: 39, from: payload)
+        let defaultSpeed = PacketDecoder.readDouble(at: 47, from: payload)
+        let cutoffFreq = PacketDecoder.readDouble(at: 55, from: payload)
         
         // Check if this is initial sync
-        let isInitialSync = !hasSynchronized
+        let isInitialSync = !hasSynchronized && !isProcessingSyncPacket
         
-        updateState { state in
-            // Always store server's mode for comparison
-            if let serverDrivingMode = DrivingMode(rawValue: mode) {
-                state.serverMode = serverDrivingMode
-            }
+        if isInitialSync {
+            // Prevent processing multiple sync packets
+            isProcessingSyncPacket = true
             
-            if isInitialSync {
-                // Initial sync: adopt server's state completely
+            // Initial sync: adopt server's state completely
+            updateState { state in
+                // Update mode
                 if let drivingMode = DrivingMode(rawValue: mode) {
                     state.drivingMode = drivingMode
+                    state.serverMode = drivingMode
                 }
                 
                 // Update all parameters from server
                 state.launchCounter = launchCounter
-                state.maxConsecutiveNans = maxConsecutiveNans
+                state.launchThresholdN = n
+                state.launchThresholdEps = eps
                 state.targetX = targetX
                 state.targetY = targetY
                 state.stopThrottle = stopThrottle
                 state.motorOffset = motorOffset
                 state.defaultSpeed = defaultSpeed
                 state.cutoffFrequency = cutoffFreq
-            } else {
-                // After sync: only update server-controlled values
-                // Don't update mode - client controls it
-                // Only update values that server manages (like launch counter)
-                state.launchCounter = launchCounter
                 
-                // Store server's view of parameters for comparison
-                // These will be used by coordinator to detect mismatches
-                state.targetX = targetX
-                state.targetY = targetY
-                state.maxConsecutiveNans = maxConsecutiveNans
-                state.stopThrottle = stopThrottle
-                state.motorOffset = motorOffset
-                state.defaultSpeed = defaultSpeed
-                state.cutoffFrequency = cutoffFreq
+                // ALSO store server's current state for ServerStateView display
+                state.serverLaunchCounter = launchCounter
+                state.serverLaunchThresholdN = n
+                state.serverLaunchThresholdEps = eps
+                state.serverTargetX = targetX
+                state.serverTargetY = targetY
+                state.serverStopThrottle = stopThrottle
+                state.serverMotorOffset = motorOffset
+                state.serverDefaultSpeed = defaultSpeed
+                state.serverCutoffFrequency = cutoffFreq
+                
+                // Update running state from server
+                if let sysState = RunningState(rawValue: systemState) {
+                    state.isRunning = sysState.isRunning
+                    state.serverIsRunning = sysState.isRunning
+                }
             }
             
-            // Always update running state from server
-            if let sysState = RunningState(rawValue: systemState) {
-                state.isRunning = sysState.isRunning
-            }
-        }
-        
-        // Mark as synchronized and trigger callback
-        let wasFirstSync = !hasSynchronized
-        hasSynchronized = true
-        
-        if wasFirstSync {
+            // Mark as synchronized and trigger callback
+            hasSynchronized = true
+            
             // Trigger synchronization callback on main thread
             if let callback = onSynchronized {
                 DispatchQueue.main.async {
                     callback()
                 }
+            }
+        } else if hasSynchronized {
+            // After initial sync: update both server state AND main state
+            updateState { state in
+                // Update mode if changed by server
+                if let drivingMode = DrivingMode(rawValue: mode) {
+                    state.drivingMode = drivingMode
+                    state.serverMode = drivingMode
+                }
+                
+                // Update running state
+                if let sysState = RunningState(rawValue: systemState) {
+                    state.isRunning = sysState.isRunning
+                    state.serverIsRunning = sysState.isRunning
+                }
+                
+                // Update all parameters from server
+                state.launchCounter = launchCounter
+                state.launchThresholdN = n
+                state.launchThresholdEps = eps
+                state.targetX = targetX
+                state.targetY = targetY
+                state.stopThrottle = stopThrottle
+                state.motorOffset = motorOffset
+                state.defaultSpeed = defaultSpeed
+                state.cutoffFrequency = cutoffFreq
+                
+                // Also store server's current state for ServerStateView display
+                state.serverLaunchCounter = launchCounter
+                state.serverLaunchThresholdN = n
+                state.serverLaunchThresholdEps = eps
+                state.serverTargetX = targetX
+                state.serverTargetY = targetY
+                state.serverStopThrottle = stopThrottle
+                state.serverMotorOffset = motorOffset
+                state.serverDefaultSpeed = defaultSpeed
+                state.serverCutoffFrequency = cutoffFreq
             }
         }
     }
@@ -305,7 +370,20 @@ final class SystemStateManager: SystemStateManagerProtocol {
         let message = PacketDecoder.readString(from: payload)
         
         updateState { state in
-            state.lastLogMessage = message
+            // If there's an existing message, concatenate with new message first
+            if !state.lastLogMessage.isEmpty && !message.isEmpty {
+                // Show newest message first, separated by " | "
+                state.lastLogMessage = message + " | " + state.lastLogMessage
+                
+                // Limit the total length to prevent UI overflow (keep last ~200 chars)
+                if state.lastLogMessage.count > 200 {
+                    if let lastSeparatorIndex = state.lastLogMessage.lastIndex(of: "|") {
+                        state.lastLogMessage = String(state.lastLogMessage[..<lastSeparatorIndex])
+                    }
+                }
+            } else {
+                state.lastLogMessage = message
+            }
         }
     }
     

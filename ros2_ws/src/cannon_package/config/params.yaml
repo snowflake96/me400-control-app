@@ -1,0 +1,32 @@
+master_node:
+  ros__parameters:
+    # Whether to use cubic interpolation for offset
+    use_interpolation: false
+    # PID control parameters
+    pid_pitch:
+      kp: 1.0
+      ki: 0.001
+      integral_limit: 1.0
+    
+    pid_yaw:
+      kp: 1.0
+      ki: 0.001
+      integral_limit: 1.0
+
+    # Trigger servo motor push retract angles
+    trigger:
+      push: 166.0
+      retract: 70.0
+    
+    cutoff_frequency: 20.0 # Hz
+    
+    # Motor control parameters
+    stop_throttle: 0.03
+    motor_offset: 0.003
+    default_speed: 0.26
+    
+    # Launch threshold parameters
+    N: 10
+    EPS: 0.005
+    max_consecutive_nans: 5
+    

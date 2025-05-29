@@ -5,58 +5,115 @@ Created by: Jisang You on 2021-03-10
 #pragma once
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/int32.hpp"
 #include "geometry_msgs/msg/vector3.hpp"
-#include <cmath> // std::round
+#include "geometry_msgs/msg/quaternion.hpp"
+#include <cmath> // std::round, std::isnan
+#include <limits>
 #include <algorithm>
-#include <unordered_map>
 #include <string>
 #include <thread>
-
+#include <chrono>
+#include <format>
+#include <cstring>
+#include <string_view>
+#include <atomic>
+#include <vector>
 #include "pid.hpp"
-#include "motor.hpp"
 #include "server.hpp"
+#include "target_interpolation.hpp"
 
-class MotorController : public rclcpp::Node { 
+class MasterNode : public rclcpp::Node { 
 public:
-  MotorController();
-  ~MotorController();
+  MasterNode();
+  ~MasterNode();
   
 private:
   // Handler function to process received data packets from client
-  void server_handler(DataPacket packet);
-  // Function to update the command and compute the angular velocity target.
-  void update_command(double throttle, double target);
+  void server_handler(const DataPacket& packet, int client_fd);
+  // Helper function to handle query from client
+  std::string handle_client_query(int client_fd);
+  // Function to initialize parameters from the yaml file
+  void init_parameters_from_yaml();
   // Callback invoked upon receiving target values from the "target_topic" (in autonoumous mode).
-  void target_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
-  // Callback invoked upon receiving target values from the "bbox".
-  void bbox_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
-  // Callback for inner angular velocity feedback on receiving msg from "gyro_topic".
-  void gyro_callback(const std_msgs::msg::Float64::SharedPtr msg);
-  // Callback that updates the pid gains when a new message is received on "pid_gains".
-  void set_position_gains_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
-  // Callback that updates the pid gains when a new message is received on "pid_gains".
-  void set_velocity_gains_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
-  // Callback that updates the pid parameters when a new message is received on "pid_params".
-  void set_params_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
+  void bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr msg);
+  // Callback for receiving pitch angle from IMU
+  void imu_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
+  // Sends servo commands to the PCA9685 driver
+  void send_servo_command(double x, double y);
+  // Sends launch servo commands to the PCA9685 driver
+  void send_launch_command(bool launch);
+  // Sends esc commands to the PCA9685 driver
+  void send_esc_command(double speed);
+  // Callback that updates the pid gains when a new message is received on "pid_gains_pitch".
+  void set_pitch_gains_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
+  // Callback that updates the pid gains when a new message is received on "pid_gains_yaw".
+  void set_yaw_gains_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
+  // Callback invoked upon limit switch trigger
+  void switch_pressed_callback(const std_msgs::msg::Int32::SharedPtr msg);
+  // Callback invoked upon limit switch release
+  void switch_released_callback(const std_msgs::msg::Int32::SharedPtr msg);
+  // Function to set the offset
+  void set_offset_from_pitch(const double pitch);
+  // Reset
+  void reset();
+  // Accelerate motor to default speed
+  void accelerate_to_default_speed();
 
-  enum class CONTROL_MODE : uint8_t {
-    POSITION = 0,
-    VELOCITY = 1
-  } control_mode_ = CONTROL_MODE::POSITION;
+  enum class Mode : uint8_t {
+    Autonomous = 0, // Auto aim and fire
+    Manual = 1, // Fully manual
+    AutoAim = 2 // Auto aim, manual fire/esc control/set offset
+  } mode_;
 
-  enum class DRIVING_MODE : uint8_t {
-    AUTONOMOUS = 0,
-    MANUAL = 1
-  } driving_mode_ = DRIVING_MODE::MANUAL;
+  enum class State : uint8_t {
+    Running = 0,
+    Stopped = 1
+  } state_;
 
-  // PID gains and parameters subscriptions
-  rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr target_subscription_, bbox_subscription_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr gyro_subscription_;
-  rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr pid_gains_position_subscription_, pid_gains_velocity_subscription_;
-  rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr params_subscription_;
-  std::unordered_map<std::string, Motor> motors_;
-  PID pid_position, pid_velocity;
-  double throttle_, angular_velocity_target_;
+  struct Target{
+    std::atomic<double> x, y;
+  } target_{};
+
+  struct LaunchThreshold{
+    std::atomic<double> EPS;
+    std::atomic<uint8_t> N;
+  } launch_threshold_{0.005, 10};
+
+  struct Tilt{
+    double roll;
+    double pitch;
+  } tilt_{};
+
+  bool found_offset_ = false;
+  uint32_t launch_counter_{0};
+  double current_speed_{0.0};
+  double stop_throttle_{0.0};
+  double motor_offset_{0.0};
+
+  inline static double push_ = 170.0;
+  inline static double retract_ = 55.0;
+  inline static bool USE_INTERPOLATION;
+  inline static uint32_t max_consecutive_nans_;
+  inline static double DEFAULT_SPEED_ = 0.2; // Default ESC value (for autonomous mode)
+  LowPassFilter lpf_x, lpf_y;
+  
+  // Publishers
+  rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr servo_command_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr launch_command_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr esc_command_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr motor_offset_pub_;
+
+  // Subscribers
+  rclcpp::Subscription<geometry_msgs::msg::Quaternion>::SharedPtr bbox_subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr imu_subscription_;
+  
+  rclcpp::TimerBase::SharedPtr timer_;
+  
+  PID pid_pitch_, pid_yaw_;
+  
+  CubicSpline spline_;
   
   Server server_; // default port number is 12345
   std::thread server_thread_; // Thread for running the server

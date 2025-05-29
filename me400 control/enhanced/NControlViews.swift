@@ -1,13 +1,98 @@
 import SwiftUI
 
+// MARK: - ESC Control View (Shared between Manual and AutoAim)
+struct NESCControlView: View {
+    @EnvironmentObject var coordinator: ControlCoordinator
+    @State private var escValue: Double = 0.0
+    @State private var isLaunching: Bool = false
+    @State private var launchProgress: Double = 0.0
+    
+    var body: some View {
+        GroupBox("ESC Control") {
+            VStack(spacing: 16) {
+                HStack {
+                    Slider(value: $escValue, in: 0...1)
+                        .onChange(of: escValue) { _, newValue in
+                            Task {
+                                let roundedValue = round(newValue * 100) / 100
+                                try? await coordinator.sendESCCommand(roundedValue)
+                            }
+                        }
+                        .disabled(!coordinator.systemState.isRunning)
+                    
+                    Text(String(format: "%.2f", escValue))
+                        .frame(width: 50)
+                        .font(.system(.body, design: .monospaced))
+                }
+                
+                // ESC Reset and Launch buttons
+                HStack(spacing: 12) {
+                    Button("Reset") {
+                        escValue = 0
+                        Task {
+                            try? await coordinator.sendESCCommand(0)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    
+                    // Launch button
+                    Button(action: {
+                        guard !isLaunching else { return }
+                        isLaunching = true
+                        launchProgress = 0
+                        
+                        Task {
+                            try? await coordinator.sendTriggerCommand(true)
+                            
+                            // Animate progress over 1 second
+                            withAnimation(.linear(duration: 1.0)) {
+                                launchProgress = 1.0
+                            }
+                            
+                            try? await Task.sleep(nanoseconds: 1_000_000_000)
+                            try? await coordinator.sendTriggerCommand(false)
+                            
+                            isLaunching = false
+                            launchProgress = 0
+                        }
+                    }) {
+                        ZStack {
+                            // Background progress
+                            GeometryReader { geometry in
+                                Rectangle()
+                                    .fill(Color.orange.opacity(0.3))
+                                    .frame(width: geometry.size.width * launchProgress)
+                                    .animation(.linear(duration: 1.0), value: launchProgress)
+                            }
+                            
+                            Label("LAUNCH!", systemImage: "flame.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .frame(maxWidth: .infinity, maxHeight: 44)
+                    .disabled(isLaunching || !coordinator.systemState.isRunning)
+                    .opacity(isLaunching ? 0.7 : 1.0)
+                }
+            }
+        }
+        .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
+        .onReceive(coordinator.$systemState) { state in
+            // Reset ESC value when stopped
+            if !state.isRunning && escValue != 0 {
+                escValue = 0
+            }
+        }
+    }
+}
+
 // MARK: - Manual Controls View
 struct ManualControlsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @State private var pitchValue: Double = 0.0
     @State private var yawValue: Double = 0.0
-    @State private var escValue: Double = 0.0
-    @State private var isLaunching: Bool = false
-    @State private var launchProgress: Double = 0.0
     
     var body: some View {
         VStack(spacing: 20) {
@@ -36,17 +121,20 @@ struct ManualControlsView: View {
                             
                             Slider(value: $pitchValue, in: -1...1, step: 0.01) { editing in
                                 if !editing {
-                                    pitchValue = 0
+                                    // Spring back to zero when released
+                                    withAnimation(.spring()) {
+                                        pitchValue = 0
+                                    }
+                                    Task {
+                                        try? await coordinator.sendServoCommand(pitch: 0, yaw: round(yawValue * 100) / 100)
+                                    }
                                 }
                             }
                             .onChange(of: pitchValue) { _, newValue in
                                 Task {
-                                    // Round to 2 decimal places before sending
-                                    let roundedValue = round(newValue * 100) / 100
-                                    try? await coordinator.sendServoCommand(
-                                        pitch: roundedValue,
-                                        yaw: round(yawValue * 100) / 100
-                                    )
+                                    let roundedPitch = round(newValue * 100) / 100
+                                    let roundedYaw = round(yawValue * 100) / 100
+                                    try? await coordinator.sendServoCommand(pitch: roundedPitch, yaw: roundedYaw)
                                 }
                             }
                             .disabled(!coordinator.systemState.isRunning)
@@ -72,17 +160,20 @@ struct ManualControlsView: View {
                             
                             Slider(value: $yawValue, in: -1...1, step: 0.01) { editing in
                                 if !editing {
-                                    yawValue = 0
+                                    // Spring back to zero when released
+                                    withAnimation(.spring()) {
+                                        yawValue = 0
+                                    }
+                                    Task {
+                                        try? await coordinator.sendServoCommand(pitch: round(pitchValue * 100) / 100, yaw: 0)
+                                    }
                                 }
                             }
                             .onChange(of: yawValue) { _, newValue in
                                 Task {
-                                    // Round to 2 decimal places before sending
-                                    let roundedValue = round(newValue * 100) / 100
-                                    try? await coordinator.sendServoCommand(
-                                        pitch: round(pitchValue * 100) / 100,
-                                        yaw: roundedValue
-                                    )
+                                    let roundedPitch = round(pitchValue * 100) / 100
+                                    let roundedYaw = round(newValue * 100) / 100
+                                    try? await coordinator.sendServoCommand(pitch: roundedPitch, yaw: roundedYaw)
                                 }
                             }
                             .disabled(!coordinator.systemState.isRunning)
@@ -99,105 +190,27 @@ struct ManualControlsView: View {
             }
             
             // ESC Control
-            GroupBox("ESC Control") {
-                VStack(spacing: 16) {
-                    HStack {
-                        Slider(value: $escValue, in: 0...1)
-                            .onChange(of: escValue) { _, newValue in
-                                Task {
-                                    try? await coordinator.sendESCCommand(newValue)
-                                }
-                            }
-                            .disabled(!coordinator.systemState.isRunning)
-                        
-                        Text(String(format: "%.2f", escValue))
-                            .frame(width: 50)
-                            .font(.system(.body, design: .monospaced))
-                    }
-                    
-                    // ESC Reset and Launch buttons
-                    HStack(spacing: 12) {
-                        Button("Reset") {
-                            escValue = 0
-                            Task {
-                                try? await coordinator.sendESCCommand(0)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
-                        
-                        Button(action: {
-                            guard !isLaunching else { return }
-                            isLaunching = true
-                            launchProgress = 0
-                            
-                            Task {
-                                try? await coordinator.sendTriggerCommand(true)
-                                
-                                // Animate progress over 1 second
-                                withAnimation(.linear(duration: 1.0)) {
-                                    launchProgress = 1.0
-                                }
-                                
-                                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                                try? await coordinator.sendTriggerCommand(false)
-                                
-                                isLaunching = false
-                                launchProgress = 0
-                            }
-                        }) {
-                            ZStack {
-                                // Background progress
-                                GeometryReader { geometry in
-                                    Rectangle()
-                                        .fill(Color.orange.opacity(0.3))
-                                        .frame(width: geometry.size.width * launchProgress)
-                                        .animation(.linear(duration: 1.0), value: launchProgress)
-                                }
-                                
-                                Label("LAUNCH!", systemImage: "flame.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
-                        .frame(maxWidth: .infinity, maxHeight: 44)
-                        .frame(width: 200) // 3x the width of reset button
-                        .disabled(isLaunching || !coordinator.systemState.isRunning)
-                        .opacity(isLaunching ? 0.7 : 1.0)
-                    }
-                }
-            }
+            NESCControlView()
         }
         .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
-        .onReceive(coordinator.$systemState) { state in
-            // Reset ESC value when stopped
-            if !state.isRunning && escValue != 0 {
-                escValue = 0
-            }
-        }
     }
 }
 
-// MARK: - Auto Aim Controls View
-struct AutoAimControlsView: View {
+// MARK: - PID Control View (Shared between AutoAim and Autonomous)
+struct PIDControlView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
     
-    @State private var escValue: Double = 0.0
-    @State private var isLaunching: Bool = false
-    @State private var launchProgress: Double = 0.0
-    
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Auto Aim Control")
-                .font(.headline)
-            
-            // Pitch PID
-            GroupBox("Pitch PID") {
+        // PID Parameters
+        GroupBox("PID Parameters") {
+            VStack(spacing: 16) {
+                // Pitch PID
                 VStack(spacing: 12) {
+                    Text("Pitch PID")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
                     NumericInputRow(
                         label: "P Gain",
                         value: $settingsStore.sharedPitchP,
@@ -235,11 +248,15 @@ struct AutoAimControlsView: View {
                         .buttonStyle(.bordered)
                     }
                 }
-            }
-            
-            // Yaw PID
-            GroupBox("Yaw PID") {
+                
+                Divider()
+                
+                // Yaw PID
                 VStack(spacing: 12) {
+                    Text("Yaw PID")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
                     NumericInputRow(
                         label: "P Gain",
                         value: $settingsStore.sharedYawP,
@@ -278,87 +295,80 @@ struct AutoAimControlsView: View {
                     }
                 }
             }
-            
-            // ESC Control
-            GroupBox("ESC Control") {
-                VStack(spacing: 16) {
-                    HStack {
-                        Slider(value: $escValue, in: 0...1)
-                            .onChange(of: escValue) { _, newValue in
-                                Task {
-                                    try? await coordinator.sendESCCommand(newValue)
-                                }
-                            }
-                            .disabled(!coordinator.systemState.isRunning)
-                        
-                        Text(String(format: "%.2f", escValue))
-                            .frame(width: 50)
-                            .font(.system(.body, design: .monospaced))
-                    }
+        }
+    }
+}
+
+// MARK: - Status View (Shared between AutoAim and Autonomous)
+struct StatusView: View {
+    @EnvironmentObject var coordinator: ControlCoordinator
+    @EnvironmentObject var settingsStore: SettingsStore
+    
+    var body: some View {
+        GroupBox("Status") {
+            VStack(alignment: .leading, spacing: 8) {
+                // Target Detection Status
+                if coordinator.systemState.boundingBox != nil {
+                    Label("Target Detected", systemImage: "viewfinder")
+                        .foregroundColor(.green)
+                } else {
+                    Label("No Target Detection", systemImage: "viewfinder")
+                        .foregroundColor(.orange)
+                }
+                
+                // BBox Error
+                if let bbox = coordinator.systemState.boundingBox {
+                    let bboxErrorX = bbox.centerX - settingsStore.targetOffsetX
+                    let bboxErrorY = bbox.centerY - settingsStore.targetOffsetY
                     
-                    // ESC Reset and Launch buttons
-                    HStack(spacing: 12) {
-                        Button("Reset") {
-                            escValue = 0
-                            Task {
-                                try? await coordinator.sendESCCommand(0)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
-                        
-                        Button(action: {
-                            guard !isLaunching else { return }
-                            isLaunching = true
-                            launchProgress = 0
-                            
-                            Task {
-                                try? await coordinator.sendTriggerCommand(true)
-                                
-                                // Animate progress over 1 second
-                                withAnimation(.linear(duration: 1.0)) {
-                                    launchProgress = 1.0
-                                }
-                                
-                                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                                try? await coordinator.sendTriggerCommand(false)
-                                
-                                isLaunching = false
-                                launchProgress = 0
-                            }
-                        }) {
-                            ZStack {
-                                // Background progress
-                                GeometryReader { geometry in
-                                    Rectangle()
-                                        .fill(Color.orange.opacity(0.3))
-                                        .frame(width: geometry.size.width * launchProgress)
-                                        .animation(.linear(duration: 1.0), value: launchProgress)
-                                }
-                                
-                                Label("LAUNCH!", systemImage: "flame.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
-                        .frame(maxWidth: .infinity, maxHeight: 44)
-                        .frame(width: 200) // 3x the width of reset button
-                        .disabled(isLaunching || !coordinator.systemState.isRunning)
-                        .opacity(isLaunching ? 0.7 : 1.0)
-                    }
+                    Text("BBox Error: (\(bboxErrorX, specifier: "%.3f"), \(bboxErrorY, specifier: "%.3f"))")
+                        .font(.caption)
+                        .foregroundColor(.yellow)
+                } else {
+                    Text("BBox Error: no detection")
+                        .font(.caption)
+                        .foregroundColor(.yellow.opacity(0.6))
+                }
+                
+                // Filtered Error
+                if let filtered = coordinator.systemState.filteredBoundingBox {
+                    let filteredErrorX = filtered.centerX - settingsStore.targetOffsetX
+                    let filteredErrorY = filtered.centerY - settingsStore.targetOffsetY
+                    
+                    Text("Filtered Error: (\(filteredErrorX, specifier: "%.3f"), \(filteredErrorY, specifier: "%.3f"))")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                } else {
+                    Text("Filtered Error: no detection")
+                        .font(.caption)
+                        .foregroundColor(.green.opacity(0.6))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - Auto Aim Controls View
+struct AutoAimControlsView: View {
+    @EnvironmentObject var coordinator: ControlCoordinator
+    @EnvironmentObject var settingsStore: SettingsStore
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Auto Aim Control")
+                .font(.headline)
+            
+            // Status
+            StatusView()
+            
+            // PID Controls
+            PIDControlView()
+            
+            // ESC Control
+            NESCControlView()
         }
         .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
-        .onAppear {
-            // Initialize from system state only if synchronized
-            if coordinator.isSynchronized {
-                // ESC value is tracked locally, not from system state
-            }
-        }
     }
 }
 
@@ -372,131 +382,11 @@ struct AutonomousControlsView: View {
             Text("Autonomous Mode")
                 .font(.headline)
             
-            GroupBox("Status") {
-                VStack(alignment: .leading, spacing: 8) {
-                    // Target Detection Status
-                    if coordinator.systemState.boundingBox != nil {
-                        Label("Target Detected", systemImage: "viewfinder")
-                            .foregroundColor(.green)
-                    } else {
-                        Label("No Target Detection", systemImage: "viewfinder")
-                            .foregroundColor(.orange)
-                    }
-                    
-                    // BBox Error
-                    if let bbox = coordinator.systemState.boundingBox {
-                        let bboxErrorX = bbox.centerX - settingsStore.targetOffsetX
-                        let bboxErrorY = bbox.centerY - settingsStore.targetOffsetY
-                        
-                        Text("BBox Error: (\(bboxErrorX, specifier: "%.3f"), \(bboxErrorY, specifier: "%.3f"))")
-                            .font(.caption)
-                            .foregroundColor(.yellow)
-                    } else {
-                        Text("BBox Error: no detection")
-                            .font(.caption)
-                            .foregroundColor(.yellow.opacity(0.6))
-                    }
-                    
-                    // Filtered Error
-                    if let filtered = coordinator.systemState.filteredBoundingBox {
-                        let filteredErrorX = filtered.centerX - settingsStore.targetOffsetX
-                        let filteredErrorY = filtered.centerY - settingsStore.targetOffsetY
-                        
-                        Text("Filtered Error: (\(filteredErrorX, specifier: "%.3f"), \(filteredErrorY, specifier: "%.3f"))")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                    } else {
-                        Text("Filtered Error: no detection")
-                            .font(.caption)
-                            .foregroundColor(.green.opacity(0.6))
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            // Status
+            StatusView()
             
-            // Pitch PID
-            GroupBox("Pitch PID") {
-                VStack(spacing: 12) {
-                    NumericInputRow(
-                        label: "P Gain",
-                        value: $settingsStore.sharedPitchP,
-                        range: -1000...1000,
-                        step: settingsStore.pitchPStepSize
-                    )
-                    
-                    NumericInputRow(
-                        label: "I Gain",
-                        value: $settingsStore.sharedPitchI,
-                        range: -1000...1000,
-                        step: settingsStore.pitchIStepSize
-                    )
-                    
-                    NumericInputRow(
-                        label: "I Limit",
-                        value: $settingsStore.sharedPitchLimit,
-                        range: 0...1000,
-                        step: settingsStore.pitchIntegralLimitStepSize
-                    )
-                    
-                    HStack {
-                        Button("Send PI") {
-                            Task {
-                                try? await coordinator.tunePitch(p: settingsStore.sharedPitchP, i: settingsStore.sharedPitchI)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        
-                        Button("Send Limit") {
-                            Task {
-                                try? await coordinator.setPitchIntegralLimit(settingsStore.sharedPitchLimit)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
-            
-            // Yaw PID
-            GroupBox("Yaw PID") {
-                VStack(spacing: 12) {
-                    NumericInputRow(
-                        label: "P Gain",
-                        value: $settingsStore.sharedYawP,
-                        range: -1000...1000,
-                        step: settingsStore.yawPStepSize
-                    )
-                    
-                    NumericInputRow(
-                        label: "I Gain",
-                        value: $settingsStore.sharedYawI,
-                        range: -1000...1000,
-                        step: settingsStore.yawIStepSize
-                    )
-                    
-                    NumericInputRow(
-                        label: "I Limit",
-                        value: $settingsStore.sharedYawLimit,
-                        range: 0...1000,
-                        step: settingsStore.yawIntegralLimitStepSize
-                    )
-                    
-                    HStack {
-                        Button("Send PI") {
-                            Task {
-                                try? await coordinator.tuneYaw(p: settingsStore.sharedYawP, i: settingsStore.sharedYawI)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        
-                        Button("Send Limit") {
-                            Task {
-                                try? await coordinator.setYawIntegralLimit(settingsStore.sharedYawLimit)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
+            // PID Controls
+            PIDControlView()
         }
     }
 }
@@ -504,13 +394,29 @@ struct AutonomousControlsView: View {
 // MARK: - System Settings View
 struct SystemSettingsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
-    @State private var cutoffFrequency: String = "5.0"
-    @State private var maxConsecutiveNans: String = "10"
-    @State private var launchThresholdEps: String = "0.005"
-    @State private var launchThresholdN: String = "5"
-    @State private var stopThrottle: String = "0.0"
-    @State private var defaultSpeed: String = "0.0"
-    @State private var motorOffset: String = "0.2"
+    @State private var cutoffFrequency: String = ""
+    @State private var maxConsecutiveNans: String = ""
+    @State private var launchThresholdEps: String = ""
+    @State private var launchThresholdN: String = ""
+    @State private var stopThrottle: String = ""
+    @State private var defaultSpeed: String = ""
+    @State private var motorOffset: String = ""
+    
+    // Track which field is focused
+    enum Field: Hashable {
+        case cutoffFrequency
+        case maxConsecutiveNans
+        case launchThresholdEps
+        case launchThresholdN
+        case stopThrottle
+        case defaultSpeed
+        case motorOffset
+    }
+    
+    @FocusState private var focusedField: Field?
+    @State private var isSending: Bool = false
+    @State private var lastSendTime: Date?
+    @State private var hasInitialized: Bool = false
     
     var body: some View {
         GroupBox("System Settings") {
@@ -522,6 +428,16 @@ struct SystemSettingsView: View {
                     TextField("Hz", text: $cutoffFrequency)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .focused($focusedField, equals: .cutoffFrequency)
+                        .placeholder(when: cutoffFrequency.isEmpty) {
+                            Text("--").foregroundColor(.gray)
+                        }
+                        .onChange(of: cutoffFrequency) { _, newValue in
+                            print("Cutoff frequency changed to: \(newValue)")
+                        }
+                        .onSubmit {
+                            print("Cutoff frequency set to: \(cutoffFrequency)")
+                        }
                     Text("Hz")
                         .foregroundColor(.secondary)
                 }
@@ -533,6 +449,16 @@ struct SystemSettingsView: View {
                     TextField("Count", text: $maxConsecutiveNans)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .focused($focusedField, equals: .maxConsecutiveNans)
+                        .placeholder(when: maxConsecutiveNans.isEmpty) {
+                            Text("--").foregroundColor(.gray)
+                        }
+                        .onChange(of: maxConsecutiveNans) { _, newValue in
+                            print("Max consecutive NANs changed to: \(newValue)")
+                        }
+                        .onSubmit {
+                            print("Max consecutive NANs set to: \(maxConsecutiveNans)")
+                        }
                 }
                 
                 // Launch Thresholds
@@ -545,12 +471,32 @@ struct SystemSettingsView: View {
                             TextField("Epsilon", text: $launchThresholdEps)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 60)
+                                .focused($focusedField, equals: .launchThresholdEps)
+                                .placeholder(when: launchThresholdEps.isEmpty) {
+                                    Text("--").foregroundColor(.gray)
+                                }
+                                .onChange(of: launchThresholdEps) { _, newValue in
+                                    print("Launch threshold epsilon changed to: \(newValue)")
+                                }
+                                .onSubmit {
+                                    print("Launch threshold epsilon set to: \(launchThresholdEps)")
+                                }
                         }
                         HStack {
                             Text("N:")
                             TextField("N", text: $launchThresholdN)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 60)
+                                .focused($focusedField, equals: .launchThresholdN)
+                                .placeholder(when: launchThresholdN.isEmpty) {
+                                    Text("--").foregroundColor(.gray)
+                                }
+                                .onChange(of: launchThresholdN) { _, newValue in
+                                    print("Launch threshold N changed to: \(newValue)")
+                                }
+                                .onSubmit {
+                                    print("Launch threshold N set to: \(launchThresholdN)")
+                                }
                         }
                     }
                 }
@@ -562,6 +508,16 @@ struct SystemSettingsView: View {
                     TextField("Value", text: $stopThrottle)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .focused($focusedField, equals: .stopThrottle)
+                        .placeholder(when: stopThrottle.isEmpty) {
+                            Text("--").foregroundColor(.gray)
+                        }
+                        .onChange(of: stopThrottle) { _, newValue in
+                            print("Stop throttle changed to: \(newValue)")
+                        }
+                        .onSubmit {
+                            print("Stop throttle set to: \(stopThrottle)")
+                        }
                 }
                 
                 // Default Speed (Double)
@@ -571,6 +527,16 @@ struct SystemSettingsView: View {
                     TextField("Value", text: $defaultSpeed)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .focused($focusedField, equals: .defaultSpeed)
+                        .placeholder(when: defaultSpeed.isEmpty) {
+                            Text("--").foregroundColor(.gray)
+                        }
+                        .onChange(of: defaultSpeed) { _, newValue in
+                            print("Default speed changed to: \(newValue)")
+                        }
+                        .onSubmit {
+                            print("Default speed set to: \(defaultSpeed)")
+                        }
                 }
                 
                 // Motor Offset (Double)
@@ -580,61 +546,212 @@ struct SystemSettingsView: View {
                     TextField("Value", text: $motorOffset)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .focused($focusedField, equals: .motorOffset)
+                        .placeholder(when: motorOffset.isEmpty) {
+                            Text("--").foregroundColor(.gray)
+                        }
+                        .onChange(of: motorOffset) { _, newValue in
+                            print("Motor offset changed to: \(newValue)")
+                        }
+                        .onSubmit {
+                            print("Motor offset set to: \(motorOffset)")
+                        }
                 }
                 
                 // Send Settings Button
-                Button("Send Settings") {
-                    sendAllSettings()
+                HStack {
+                    Button("Send Settings") {
+                        sendAllSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSending || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
+                    
+                    if isSending {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else if let lastSend = lastSendTime, Date().timeIntervalSince(lastSend) < 2 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
-                .buttonStyle(.borderedProminent)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear {
-            // Initialize from current state if available
-            if coordinator.isSynchronized {
-                cutoffFrequency = String(format: "%.1f", coordinator.systemState.cutoffFrequency)
-                maxConsecutiveNans = String(coordinator.systemState.maxConsecutiveNans)
-                stopThrottle = String(format: "%.1f", coordinator.systemState.stopThrottle)
-                defaultSpeed = String(format: "%.1f", coordinator.systemState.defaultSpeed)
-                motorOffset = String(format: "%.1f", coordinator.systemState.motorOffset)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                if let field = focusedField {
+                    Spacer()
+                    Text(toolbarText(for: field))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.blue)
+                    Spacer()
+                    Button("Done") {
+                        focusedField = nil
+                    }
+                }
+            }
+        }
+        .onReceive(coordinator.$isSynchronized) { synchronized in
+            // Only initialize once when first synchronized
+            if synchronized && !hasInitialized {
+                // Small delay to ensure server values are populated
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    initializeFromSystemState()
+                    hasInitialized = true
+                }
+            }
+        }
+        .onReceive(coordinator.$connectionState) { state in
+            // Reset initialization flag when disconnected
+            if !state.isConnected {
+                hasInitialized = false
             }
         }
     }
     
+    private func toolbarText(for field: Field) -> String {
+        switch field {
+        case .cutoffFrequency:
+            return "Cutoff: \(cutoffFrequency) Hz"
+        case .maxConsecutiveNans:
+            return "Max NANs: \(maxConsecutiveNans)"
+        case .launchThresholdEps:
+            return "Epsilon: \(launchThresholdEps)"
+        case .launchThresholdN:
+            return "N: \(launchThresholdN)"
+        case .stopThrottle:
+            return "Stop Throttle: \(stopThrottle)"
+        case .defaultSpeed:
+            return "Speed: \(defaultSpeed)"
+        case .motorOffset:
+            return "Motor Offset: \(motorOffset)"
+        }
+    }
+    
+    private func initializeFromSystemState() {
+        // Initialize with actual values from system state after synchronization
+        cutoffFrequency = String(format: "%.1f", coordinator.systemState.cutoffFrequency)
+        maxConsecutiveNans = String(coordinator.systemState.maxConsecutiveNans)
+        launchThresholdEps = String(format: "%.3f", coordinator.systemState.launchThresholdEps)
+        launchThresholdN = String(coordinator.systemState.launchThresholdN)
+        stopThrottle = String(format: "%.1f", coordinator.systemState.stopThrottle)
+        defaultSpeed = String(format: "%.1f", coordinator.systemState.defaultSpeed)
+        motorOffset = String(format: "%.1f", coordinator.systemState.motorOffset)
+    }
+    
     private func sendAllSettings() {
+        guard !isSending else { return }
+        
+        // Debug: Print current values before sending
+        print("=== Sending Settings ===")
+        print("Cutoff Frequency: \(cutoffFrequency)")
+        print("Max Consecutive NANs: \(maxConsecutiveNans)")
+        print("Launch Threshold Eps: \(launchThresholdEps)")
+        print("Launch Threshold N: \(launchThresholdN)")
+        print("Stop Throttle: \(stopThrottle)")
+        print("Default Speed: \(defaultSpeed)")
+        print("Motor Offset: \(motorOffset)")
+        print("=====================")
+        
+        isSending = true
+        focusedField = nil // Dismiss keyboard
+        
         Task {
+            defer { 
+                isSending = false
+                lastSendTime = Date()
+            }
+            
+            var successCount = 0
+            
             // Send Cutoff Frequency
             if let freq = Double(cutoffFrequency) {
-                try? await coordinator.setCutoffFrequency(freq)
+                do {
+                    print("Sending cutoff frequency: \(freq)")
+                    try await coordinator.setCutoffFrequency(freq)
+                    successCount += 1
+                    // Small delay between sends
+                    try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                } catch {
+                    print("Failed to set cutoff frequency: \(error)")
+                }
+            } else {
+                print("Failed to parse cutoff frequency: '\(cutoffFrequency)'")
             }
             
             // Send Max Consecutive NANs
             if let maxNans = UInt32(maxConsecutiveNans) {
-                try? await coordinator.setMaxConsecutiveNans(maxNans)
+                do {
+                    print("Sending max consecutive NANs: \(maxNans)")
+                    try await coordinator.setMaxConsecutiveNans(maxNans)
+                    successCount += 1
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                } catch {
+                    print("Failed to set max consecutive NANs: \(error)")
+                }
+            } else {
+                print("Failed to parse max consecutive NANs: '\(maxConsecutiveNans)'")
             }
             
             // Send Launch Threshold
             if let eps = Double(launchThresholdEps), let n = UInt8(launchThresholdN) {
-                try? await coordinator.setLaunchThreshold(epsilon: eps, n: n)
+                do {
+                    print("Sending launch threshold: eps=\(eps), n=\(n)")
+                    try await coordinator.setLaunchThreshold(epsilon: eps, n: n)
+                    successCount += 1
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                } catch {
+                    print("Failed to set launch threshold: \(error)")
+                }
+            } else {
+                print("Failed to parse launch threshold: eps='\(launchThresholdEps)', n='\(launchThresholdN)'")
             }
             
             // Send Stop Throttle
             if let throttle = Double(stopThrottle) {
-                try? await coordinator.setStopThrottle(throttle)
+                do {
+                    print("Sending stop throttle: \(throttle)")
+                    try await coordinator.setStopThrottle(throttle)
+                    successCount += 1
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                } catch {
+                    print("Failed to set stop throttle: \(error)")
+                }
+            } else {
+                print("Failed to parse stop throttle: '\(stopThrottle)'")
             }
             
             // Send Default Speed
             if let speed = Double(defaultSpeed) {
-                try? await coordinator.setDefaultSpeed(speed)
+                do {
+                    print("Sending default speed: \(speed)")
+                    try await coordinator.setDefaultSpeed(speed)
+                    successCount += 1
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                } catch {
+                    print("Failed to set default speed: \(error)")
+                }
+            } else {
+                print("Failed to parse default speed: '\(defaultSpeed)'")
             }
             
             // Send Motor Offset
             if let offset = Double(motorOffset) {
-                try? await coordinator.setMotorOffset(offset)
+                do {
+                    print("Sending motor offset: \(offset)")
+                    try await coordinator.setMotorOffset(offset)
+                    successCount += 1
+                } catch {
+                    print("Failed to set motor offset: \(error)")
+                }
+            } else {
+                print("Failed to parse motor offset: '\(motorOffset)'")
             }
+            
+            print("Successfully sent \(successCount) settings to server")
         }
     }
 }
@@ -670,6 +787,20 @@ struct NumericInputRow: View {
             }
             
             Spacer()
+        }
+    }
+}
+
+// MARK: - Extensions
+extension View {
+    func placeholder<Content: View>(
+        when shouldShow: Bool,
+        alignment: Alignment = .leading,
+        @ViewBuilder placeholder: () -> Content) -> some View {
+        
+        ZStack(alignment: alignment) {
+            placeholder().opacity(shouldShow ? 1 : 0)
+            self
         }
     }
 } 

@@ -318,6 +318,11 @@ class ServerCommunicationManager: ObservableObject {
         isRunning = false
         receivedMessages.removeAll()
         
+        // Clear log messages
+        DispatchQueue.main.async {
+            ParameterManager.shared.lastLogMessage = ""
+        }
+        
         // Set connection to nil after cleanup
         connection = nil
     }
@@ -588,8 +593,23 @@ class ServerCommunicationManager: ObservableObject {
                 
                 // Store log message in ParameterManager
                 DispatchQueue.main.async {
-                    // Extract just the log text without the "Received Log: " prefix
-                    ParameterManager.shared.lastLogMessage = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Get current log message
+                    let currentLog = ParameterManager.shared.lastLogMessage
+                    let newLogText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    // Concatenate with existing log, newest first
+                    if !currentLog.isEmpty && !newLogText.isEmpty {
+                        ParameterManager.shared.lastLogMessage = newLogText + " | " + currentLog
+                        
+                        // Limit length to prevent overflow
+                        if ParameterManager.shared.lastLogMessage.count > 200 {
+                            if let lastSeparatorIndex = ParameterManager.shared.lastLogMessage.lastIndex(of: "|") {
+                                ParameterManager.shared.lastLogMessage = String(ParameterManager.shared.lastLogMessage[..<lastSeparatorIndex])
+                            }
+                        }
+                    } else {
+                        ParameterManager.shared.lastLogMessage = newLogText
+                    }
                 }
             }
         case 17: // Query

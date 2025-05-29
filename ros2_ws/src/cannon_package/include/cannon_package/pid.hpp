@@ -1,97 +1,136 @@
 /*
 This is a PID controller class
-Created by: You, Jisang on 2021-06-30
+Created by: You, Jisang on 2025 April 5th
 */
 #pragma once
 #include <chrono>
 #include <algorithm> // std::clamp
 #include <limits>
+#include <cmath>      // std::isnan, M_PI
+#include <cassert>
+#include <utility>
 
 class LowPassFilter {
 private:
-    double alpha;  // Smoothing factor (between 0 and 1)
-    double filtered_value;
-    bool initialized;
+    // time constant RC = 1/(2π f_c)
+    double RC_;            
+
+    // last output
+    double y_prev_;        
+
+    // Cutoff frequency
+    double cutoff_freq_;
+
+    // flag for first sample
+    bool   initialized_;    
+
+    // timestamp of the last filter() call
+    using Clock      = std::chrono::steady_clock;
+    Clock::time_point t_prev_;  
 
 public:
-    // Cutoff frequency in Hz, sampling time in seconds
-    LowPassFilter(double cutoff_freq = 2.0, double sampling_time = 0.1) {
-        setCutoffFrequency(cutoff_freq, sampling_time);
-        filtered_value = 0.0;
-        initialized = false;
+    // f_c = cutoff frequency [Hz]
+    LowPassFilter(double cutoff_hz = 5.0)
+      : RC_(1.0 / (2.0 * M_PI * cutoff_hz)),
+        y_prev_(0.0),
+        cutoff_freq_(cutoff_hz),
+        initialized_(false),
+        t_prev_(Clock::now())
+    {
+        assert(cutoff_hz > 0);
     }
 
-    // Set a new cutoff frequency and recompute alpha
-    void setCutoffFrequency(double cutoff_freq, double sampling_time) {
-        double RC = 1.0 / (2.0 * 3.141592653589793 * cutoff_freq);
-        alpha = sampling_time / (sampling_time + RC);
-    }
-
-    // Apply the filter to a new raw input
-    double filter(double input) {
-        if (!initialized) {
-            filtered_value = input;  // Initialize with the first value
-            initialized = true;
-        } else {
-            filtered_value = alpha * input + (1.0 - alpha) * filtered_value;
+    // Call this on each new sample; dt is computed internally.
+    double filter(double x){
+        if (std::isnan(x))
+            return y_prev_;
+    
+        if (!initialized_) {
+            // first sample – no history, no dt needed
+            y_prev_      = x;
+            initialized_ = true;
+            t_prev_      = Clock::now();
+            return y_prev_;
         }
-        return filtered_value;
+    
+        // --- normal path ---
+        auto   now  = Clock::now();
+        double dt   = std::chrono::duration<double>(now - t_prev_).count();
+        t_prev_     = now;
+    
+        assert(dt > 0);
+    
+        double alpha = std::clamp(dt / (RC_ + dt), 0.0, 1.0);
+        y_prev_      = alpha * x + (1.0 - alpha) * y_prev_;
+        return y_prev_;
     }
 
-    // Get the current filtered value
-    double getFilteredValue() const {
-        return filtered_value;
+    void reset() {
+        initialized_ = false;
+    }
+
+    // Change cutoff frequency on the fly
+    void setCutoffFrequency(double cutoff_hz) {
+        cutoff_freq_ = std::abs(cutoff_hz);
+        RC_ = 1.0 / (2.0 * M_PI * cutoff_freq_);
+        reset();
+    }
+
+    double getCutoffFrequency() const {
+        return cutoff_freq_;
     }
 };
 
-
+// PID class
 class PID {
-private:
-    // Member variables for PID controller
-    double Kp_, Ki_, Kd_;
-    double prev_error, integral;
-    double last_time;
-    double integral_limit_;
+    double Kp_{10.0}, Ki_{0.0}, Kd_{0.0};
+    double error_{0.0}, prev_error_{0.0}, integral_{0.0};
+    double last_time_;
+    double integral_limit_{1.0};
+    bool   first_call_{true};
+    double psignal_, isignal_;
+    double integral_threshold_{std::numeric_limits<double>::max()}; // To start, there is no threshold
 
-    // Low-pass filter for derivative term
-    LowPassFilter lpf;
-
-public:
-    PID() : prev_error(0), integral(0), last_time(0), integral_limit_(std::numeric_limits<double>::max()) {
-        setGains(0.0, 0.0, 0.0);
-    }
-
-    void setGains(double Kp, double Ki, double Kd){
-        Kp_ = Kp;
-        Ki_ = Ki;
-        Kd_ = Kd;
-    }
-
-    void setParams(double cutoff_freq, double sampling_time, double limit) {
-        lpf.setCutoffFrequency(cutoff_freq, sampling_time);
-        integral_limit_ = limit;
-    }
-
-    double getCurrentTime() {
+    static double nowSeconds() {
         return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
-    double compute(double setpoint, double measured_value) {
-        double error = setpoint - measured_value;
-        double current_time = getCurrentTime();
-        double dt = current_time - last_time;
+public:
+    PID() : last_time_(nowSeconds()) {}
+    
+    void setGains(double kp, double ki, double kd) { Kp_=kp; Ki_=ki; Kd_=kd; }
+    void setIntegralLimit(double lim) { integral_limit_=lim; }
+    void setIntegralThreshold(double threshold){ integral_threshold_ = std::abs(threshold); }
+    double getIntegralLimit() const { return integral_limit_; }
+    void reset() { integral_=0.0; first_call_=true; }
+    double getLastError() { return error_; }
+    double getLastPsignal() const { return psignal_; }
+    double getLastIsignal() const { return isignal_; }
+    std::pair<double, double> getPIgains(){ return {Kp_, Ki_}; }
 
-        if (dt <= 0.0) return 0.0;  // Avoid division by zero
+    double compute(double setpoint, double measured)
+    {
+        double current_time = nowSeconds();
+        double dt = current_time - last_time_;
+        if (dt <= 0.0) return 0.0;          // should never hit, but be safe
 
-        integral += error * dt;
-        integral = std::clamp(integral, -integral_limit_, integral_limit_); // Prevent windup
-        
-        double derivative = lpf.filter(error - prev_error) / dt; // filtered derivative
+        error_ = setpoint - measured;
 
-        double output = (Kp_ * error) + (Ki_ * integral) + (Kd_ * derivative);
+        // ---- Integral term ----
+        if (!first_call_ && std::abs(error_) < integral_threshold_) {
+            integral_ += error_ * dt;
+            integral_ = std::clamp(integral_, -integral_limit_, integral_limit_);
+        }
 
-        prev_error = error;
-        last_time = current_time;
+        // ---- PID Output ----
+        psignal_ = Kp_ * error_;
+        isignal_ = Ki_ * integral_;
+        double output = psignal_ + isignal_; // use only PI terms
+
+        // ---- Update state ----
+        prev_error_ = error_;
+        last_time_  = current_time;
+        first_call_ = false;
 
         return output;
     }

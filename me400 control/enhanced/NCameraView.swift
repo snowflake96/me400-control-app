@@ -453,23 +453,69 @@ struct CameraInfoView: View {
     }
 }
 
-// MARK: - Offset Control View
-struct OffsetControlView: View {
+// MARK: - Y Offset Control View
+struct YOffsetControlView: View {
+    @EnvironmentObject var coordinator: ControlCoordinator
+    @EnvironmentObject var settingsStore: SettingsStore
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("Y Offset")
+                .font(.caption)
+                .fontWeight(.medium)
+            
+            Text(String(format: "%.3f", settingsStore.targetOffsetY))
+                .font(.system(size: 12, design: .monospaced))
+                .frame(width: 60)
+            
+            // Rotated vertical slider
+            GeometryReader { geometry in
+                RotatedVerticalSlider(
+                    value: $settingsStore.targetOffsetY,
+                    in: -0.4...0.4,
+                    step: 0.001
+                )
+                .frame(width: geometry.size.height, height: 40)
+                .rotationEffect(.degrees(-90))
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            }
+            .frame(width: 40)
+            .clipped()
+            
+            Text("Y")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Text("Move up if\nball goes\nabove")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+        .opacity(coordinator.connectionState.isConnected ? 1.0 : 0.6)
+    }
+}
+
+// MARK: - X Offset Control View
+struct XOffsetControlView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
     
     var body: some View {
         HStack(spacing: 20) {
             // Title
-            Text("Target\nOffset\nControl")
+            Text("X Offset\nControl")
                 .font(.system(size: 14, weight: .medium))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .frame(width: 60)
             
-            // Sliders
-            VStack(spacing: 12) {
-                // X Offset
+            // X Offset slider
+            VStack(spacing: 8) {
                 HStack {
                     Text("X")
                         .frame(width: 20)
@@ -487,44 +533,17 @@ struct OffsetControlView: View {
                         .font(.system(.body, design: .monospaced))
                 }
                 
-                // Y Offset
-                HStack {
-                    Text("Y")
-                        .frame(width: 20)
-                        .foregroundColor(.secondary)
-                    
-                    Slider(
-                        value: $settingsStore.targetOffsetY,
-                        in: -0.4...0.4,
-                        step: 0.001
-                    )
-                    .disabled(!coordinator.connectionState.isConnected)
-                    
-                    Text(String(format: "%.3f", settingsStore.targetOffsetY))
-                        .frame(width: 60)
-                        .font(.system(.body, design: .monospaced))
-                }
-                
-                HStack {
-                    Text("X: Move right if ball goes right")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("Y: Move up if ball goes above")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+                Text("X: Move right if ball goes right")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity)
             
-            // Buttons
-            VStack(spacing: 8) {
+            // Buttons - horizontal layout
+            HStack(spacing: 12) {
                 Button("Reset") {
                     settingsStore.targetOffsetX = 0
                     settingsStore.targetOffsetY = 0
-                    Task {
-                        try? await coordinator.setOffset(x: 0, y: 0, z: 0)
-                    }
                 }
                 .buttonStyle(.bordered)
                 .frame(width: 80, height: 36)
@@ -549,6 +568,92 @@ struct OffsetControlView: View {
         .background(Color(.systemGray6))
         .cornerRadius(10)
         .opacity(coordinator.connectionState.isConnected ? 1.0 : 0.6)
+    }
+}
+
+// MARK: - Rotated Vertical Slider
+struct RotatedVerticalSlider: View {
+    @Binding var value: Double
+    let `in`: ClosedRange<Double>
+    let step: Double
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Background track
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color(.systemGray4))
+                    .frame(width: geometry.size.width, height: 6)
+                
+                // Zero line indicator
+                let zeroPosition = geometry.size.width * ((0 - `in`.lowerBound) / (`in`.upperBound - `in`.lowerBound))
+                Rectangle()
+                    .fill(Color.red.opacity(0.5))
+                    .frame(width: 2, height: geometry.size.height)
+                    .position(x: zeroPosition, y: geometry.size.height / 2)
+                
+                // Standard horizontal slider
+                Slider(
+                    value: $value,
+                    in: `in`,
+                    step: step
+                )
+                .accentColor(.blue)
+            }
+        }
+    }
+}
+
+// MARK: - Offset Control View (keeping for backward compatibility)
+struct OffsetControlView: View {
+    var body: some View {
+        EmptyView()
+    }
+}
+
+// MARK: - Vertical Slider (keeping the original implementation)
+struct VerticalSlider: View {
+    @Binding var value: Double
+    let `in`: ClosedRange<Double>
+    let step: Double
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Background track
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color(.systemGray4))
+                    .frame(width: 6)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                
+                // Value indicator
+                let normalizedValue = (value - `in`.lowerBound) / (`in`.upperBound - `in`.lowerBound)
+                let yPosition = geometry.size.height * (1 - normalizedValue)
+                
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 20, height: 20)
+                    .position(x: geometry.size.width / 2, y: yPosition)
+                
+                // Zero line indicator
+                let zeroPosition = geometry.size.height * (1 - (0 - `in`.lowerBound) / (`in`.upperBound - `in`.lowerBound))
+                Rectangle()
+                    .fill(Color.red.opacity(0.5))
+                    .frame(width: geometry.size.width, height: 1)
+                    .position(x: geometry.size.width / 2, y: zeroPosition)
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        let normalizedY = 1 - (drag.location.y / geometry.size.height)
+                        let newValue = normalizedY * (`in`.upperBound - `in`.lowerBound) + `in`.lowerBound
+                        
+                        // Apply step
+                        let steppedValue = round(newValue / step) * step
+                        value = max(`in`.lowerBound, min(`in`.upperBound, steppedValue))
+                    }
+            )
+        }
     }
 }
 

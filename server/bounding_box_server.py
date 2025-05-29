@@ -206,6 +206,16 @@ def main():
     HOST = '0.0.0.0'  # Listen on all available interfaces
     PORT = 12345
     
+    # State variables
+    target_x = 0.0
+    target_y = 0.0
+    max_consecutive_nans = 10
+    stop_throttle = 0.0
+    motor_offset = 0.0
+    default_speed = 1.0
+    cutoff_freq = 10.0
+    launch_counter = 0
+    
     # Create socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((HOST, PORT))
@@ -224,7 +234,17 @@ def main():
         if data and data[0] == 17:  # Query response
             print("Received Query response, sending CurrentState packet")
             # Send CurrentState packet with manual mode and running state
-            client_socket.send(create_current_state_packet(8, 5))  # 8 for manual, 5 for running
+            current_state_packet = create_current_state_packet(8, 5)  # 8 for manual, 5 for running
+            # Update packet with current values
+            struct.pack_into('<I', current_state_packet, 3, launch_counter)
+            struct.pack_into('<I', current_state_packet, 7, max_consecutive_nans)
+            struct.pack_into('<d', current_state_packet, 11, target_x)
+            struct.pack_into('<d', current_state_packet, 19, target_y)
+            struct.pack_into('<d', current_state_packet, 27, stop_throttle)
+            struct.pack_into('<d', current_state_packet, 35, motor_offset)
+            struct.pack_into('<d', current_state_packet, 43, default_speed)
+            struct.pack_into('<d', current_state_packet, 51, cutoff_freq)
+            client_socket.send(current_state_packet)
             print("Sent CurrentState packet")
         else:
             print("Received unexpected packet type")
@@ -243,8 +263,45 @@ def main():
                     decoded = decode_packet(data)
                     print(f"Received: {decoded}")
                     
+                    # Handle SetOffset command
+                    if data[0] == 10:  # SetOffset
+                        target_x = struct.unpack('<d', data[1:9])[0]
+                        target_y = struct.unpack('<d', data[9:17])[0]
+                        print(f"Updated target offset: x={target_x:.3f}, y={target_y:.3f}")
+                        continue
+                    
+                    # Handle SetMaxConsecutiveNans
+                    elif data[0] == 23:
+                        max_consecutive_nans = struct.unpack('<I', data[1:5])[0]
+                        print(f"Updated max consecutive NANs: {max_consecutive_nans}")
+                        continue
+                    
+                    # Handle SetStopThrottle
+                    elif data[0] == 22:
+                        stop_throttle = struct.unpack('<d', data[1:9])[0]
+                        print(f"Updated stop throttle: {stop_throttle:.3f}")
+                        continue
+                    
+                    # Handle MotorOffset
+                    elif data[0] == 18:
+                        motor_offset = struct.unpack('<d', data[1:9])[0]
+                        print(f"Updated motor offset: {motor_offset:.3f}")
+                        continue
+                    
+                    # Handle SetDefaultSpeed
+                    elif data[0] == 24:
+                        default_speed = struct.unpack('<d', data[1:9])[0]
+                        print(f"Updated default speed: {default_speed:.3f}")
+                        continue
+                    
+                    # Handle SetCutoffFrequency
+                    elif data[0] == 20:
+                        cutoff_freq = struct.unpack('<d', data[1:9])[0]
+                        print(f"Updated cutoff frequency: {cutoff_freq:.3f}")
+                        continue
+                    
                     # Handle STOP command
-                    if data[0] == 6:  # Stop command
+                    elif data[0] == 6:  # Stop command
                         is_running = False
                         # print("Received STOP command, stopping data transmission")
                         # client_socket.send(create_stop_packet())  # Send stop response
@@ -265,20 +322,26 @@ def main():
                         current_mode = 8
                         continue
                     
+                    elif data[0] == 9:
+                        current_mode = 9
+                        continue
+                    
                     # Handle Query command
                     elif data[0] == 17:  # Query command
                         print("Received Query command, sending CurrentState packet")
                         # Send CurrentState packet with current mode and state
-                        client_socket.send(create_current_state_packet(current_mode, 5 if is_running else 6))  # 8 for manual, 5/6 for running/stopped
+                        current_state_packet = create_current_state_packet(current_mode, 5 if is_running else 6)
+                        # Update packet with current values
+                        struct.pack_into('<I', current_state_packet, 3, launch_counter)
+                        struct.pack_into('<I', current_state_packet, 7, max_consecutive_nans)
+                        struct.pack_into('<d', current_state_packet, 11, target_x)
+                        struct.pack_into('<d', current_state_packet, 19, target_y)
+                        struct.pack_into('<d', current_state_packet, 27, stop_throttle)
+                        struct.pack_into('<d', current_state_packet, 35, motor_offset)
+                        struct.pack_into('<d', current_state_packet, 43, default_speed)
+                        struct.pack_into('<d', current_state_packet, 51, cutoff_freq)
+                        client_socket.send(current_state_packet)
                         continue
-                    
-                    # # Handle mode change commands
-                    # elif data[0] == 7:  # SetAutonomous
-                    #     client_socket.send(create_current_state_packet(7, 5 if is_running else 6))
-                    # elif data[0] == 8:  # SetManual
-                    #     client_socket.send(create_current_state_packet(8, 5 if is_running else 6))
-                    # elif data[0] == 9:  # SetAutoAim
-                    #     client_socket.send(create_current_state_packet(9, 5 if is_running else 6))
                     
             except socket.timeout:
                 pass  # No data received, continue with sending

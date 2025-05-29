@@ -87,8 +87,8 @@ button:hover {
 }
 
 /* Status messages for each section */
-#status_position_pid,
-#status_velocity_pid,
+#status_pitch_pid,
+#status_yaw_pid,
 #status_params {
     margin-top: 10px;
     font-weight: bold;

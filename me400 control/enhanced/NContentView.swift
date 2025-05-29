@@ -4,6 +4,7 @@ struct NContentView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
     @State private var showingSettings = false
+    @State private var hasInitializedFromServer = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -35,9 +36,23 @@ struct NContentView: View {
             coordinator.updateConfiguration(config)
         }
         .onReceive(coordinator.$isSynchronized) { synchronized in
-            // Initialize PID values from system state when synchronized
-            if synchronized {
-                settingsStore.initializePIDFromSystemState(coordinator.systemState)
+            // Initialize values from system state only once when first synchronized
+            if synchronized && !hasInitializedFromServer {
+                // Small delay to ensure server values are populated
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    settingsStore.initializePIDFromSystemState(coordinator.systemState)
+                    settingsStore.targetOffsetX = coordinator.systemState.targetX
+                    settingsStore.targetOffsetY = coordinator.systemState.targetY
+                    hasInitializedFromServer = true
+                    
+                    // Do NOT send offset automatically - wait for user to press Send button
+                }
+            }
+        }
+        .onReceive(coordinator.$connectionState) { state in
+            // Reset initialization flag when disconnected
+            if !state.isConnected {
+                hasInitializedFromServer = false
             }
         }
     }
@@ -68,30 +83,81 @@ struct HeaderView: View {
                 SystemControlsView()
             }
             .padding(.horizontal)
-            .padding(.vertical, 12)
             
-            // Log Message Display
-            if !coordinator.systemState.lastLogMessage.isEmpty {
-                HStack {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.orange)
-                    Text(coordinator.systemState.lastLogMessage)
-                        .lineLimit(1)
+            // Log Message Display - Always visible
+            HStack(spacing: 0) {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.orange)
+                    .font(.caption)
+                    .padding(.trailing, 4)
+                
+                // Parse and display log messages with transparency gradient
+                if coordinator.systemState.lastLogMessage.isEmpty {
+                    Text("No messages")
                         .font(.caption)
-                    Spacer()
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                } else {
+                    HStack(spacing: 0) {
+                        let messages = coordinator.systemState.lastLogMessage.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+                        ForEach(0..<4, id: \.self) { index in
+                            if index > 0 {
+                                // Divider
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(width: 1)
+                                    .frame(height: 20)
+                            }
+                            
+                            // Message box
+                            HStack {
+                                if index < messages.count {
+                                    Text(messages[index])
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(Color.black.opacity(opacityForIndex(index)))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                } else {
+                                    Text(" ")
+                                        .font(.caption)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 4)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 6)
-                .background(Color.orange.opacity(0.1))
+                
+                Spacer()
             }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(
+                coordinator.systemState.lastLogMessage.isEmpty ? 
+                Color.orange.opacity(0.1) : 
+                Color.yellow.opacity(0.7)
+            )
         }
         .background(Color(.systemBackground))
+        .frame(height: 100)  // Fixed height
         .overlay(
             Rectangle()
                 .fill(Color(.separator))
                 .frame(height: 1),
             alignment: .bottom
         )
+    }
+    
+    private func opacityForIndex(_ index: Int) -> Double {
+        switch index {
+        case 0: return 1.0    // 100% visible
+        case 1: return 0.8    // 80% visible
+        case 2: return 0.6    // 60% visible
+        case 3: return 0.4    // 40% visible
+        default: return 0.0
+        }
     }
 }
 
@@ -117,9 +183,17 @@ struct ConnectionStatusView: View {
                             .font(.caption2)
                             .foregroundColor(.orange)
                     } else if coordinator.isSynchronized {
-                        Text("Synchronized")
-                            .font(.caption2)
-                            .foregroundColor(.green)
+                        HStack(spacing: 8) {
+                            Text("Synchronized")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                            
+                            // Latency display with fixed width
+                            Text("(\(Int(coordinator.latency * 1000))ms)")
+                                .font(.caption2)
+                                .foregroundColor(latencyColor)
+                                .frame(width: 60, alignment: .leading) // Fixed width
+                        }
                     }
                 }
             }
@@ -154,6 +228,17 @@ struct ConnectionStatusView: View {
         }
     }
     
+    private var latencyColor: Color {
+        let ms = coordinator.latency * 1000
+        if ms < 50 {
+            return .green
+        } else if ms < 150 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+    
     private func toggleConnection() {
         if coordinator.connectionState.isConnected {
             coordinator.disconnect()
@@ -176,30 +261,6 @@ struct SystemControlsView: View {
                     Button(action: {
                         Task {
                             try? await coordinator.setMode(mode)
-                            
-                            // Mode-specific actions
-                            switch mode {
-                            case .manual:
-                                // Send ESC zero when switching to manual
-                                try? await coordinator.sendESCCommand(0)
-                                
-                            case .autoAim, .autonomous:
-                                // Send ESC zero first
-                                try? await coordinator.sendESCCommand(0)
-                                
-                                // Send PID values and limits
-                                try? await coordinator.tunePitch(p: settingsStore.sharedPitchP, i: settingsStore.sharedPitchI)
-                                try? await coordinator.tuneYaw(p: settingsStore.sharedYawP, i: settingsStore.sharedYawI)
-                                try? await coordinator.setPitchIntegralLimit(settingsStore.sharedPitchLimit)
-                                try? await coordinator.setYawIntegralLimit(settingsStore.sharedYawLimit)
-                                
-                                // Send target offset
-                                try? await coordinator.setOffset(
-                                    x: settingsStore.targetOffsetX,
-                                    y: settingsStore.targetOffsetY,
-                                    z: 0
-                                )
-                            }
                         }
                     }) {
                         Text(mode.displayName)
@@ -249,12 +310,8 @@ struct SystemControlsView: View {
             Button(action: {
                 Task {
                     if coordinator.systemState.isRunning {
-                        // Send ESC zero first, then stop
-                        try? await coordinator.sendESCCommand(0)
                         try? await coordinator.stop()
                     } else {
-                        // Send configuration before starting
-                        await sendStartConfiguration()
                         try? await coordinator.start()
                     }
                 }
@@ -268,28 +325,6 @@ struct SystemControlsView: View {
             .buttonStyle(.borderedProminent)
             .tint(coordinator.systemState.isRunning ? .red : .green)
             .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
-        }
-    }
-    
-    private func sendStartConfiguration() async {
-        // Send all configuration parameters
-        try? await coordinator.setMaxConsecutiveNans(coordinator.systemState.maxConsecutiveNans)
-        try? await coordinator.setOffset(
-            x: settingsStore.targetOffsetX,
-            y: settingsStore.targetOffsetY,
-            z: 0
-        )
-        try? await coordinator.setStopThrottle(coordinator.systemState.stopThrottle)
-        try? await coordinator.setMotorOffset(coordinator.systemState.motorOffset)
-        try? await coordinator.setDefaultSpeed(coordinator.systemState.defaultSpeed)
-        try? await coordinator.setCutoffFrequency(coordinator.systemState.cutoffFrequency)
-        
-        // Send PID parameters if in AutoAim or Autonomous mode
-        if coordinator.systemState.drivingMode == .autoAim || coordinator.systemState.drivingMode == .autonomous {
-            try? await coordinator.tunePitch(p: settingsStore.sharedPitchP, i: settingsStore.sharedPitchI)
-            try? await coordinator.tuneYaw(p: settingsStore.sharedYawP, i: settingsStore.sharedYawI)
-            try? await coordinator.setPitchIntegralLimit(settingsStore.sharedPitchLimit)
-            try? await coordinator.setYawIntegralLimit(settingsStore.sharedYawLimit)
         }
     }
 }
@@ -324,49 +359,68 @@ struct VisualizationView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Camera View with overlays
-            ZStack {
-                NCameraView()
-                
-                // Overlay information on camera view
-                VStack {
-                    HStack {
-                        Spacer()
+        VStack(spacing: 12) {
+            // Top section: ServerStateView (full width)
+            ServerStateView()
+                .frame(height: 80)
+            
+            // Middle section: Y Offset Control (left) and CameraView (right)
+            GeometryReader { geometry in
+                HStack(spacing: 12) {
+                    // Y Offset Control (left side)
+                    YOffsetControlView()
+                        .frame(width: 100)
+                        .frame(maxHeight: .infinity)
+                    
+                    // Camera View (right side - takes remaining space)
+                    ZStack {
+                        NCameraView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.black)
+                            .cornerRadius(10)
                         
-                        // Tilt Information (top right)
-                        if coordinator.connectionState.isConnected {
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Label("Roll: \(coordinator.systemState.tiltRoll, specifier: "%.1f")°", systemImage: "rotate.left")
-                                Label("Pitch: \(coordinator.systemState.tiltPitch, specifier: "%.1f")°", systemImage: "rotate.right")
+                        // Overlay information on camera view
+                        VStack {
+                            HStack {
+                                Spacer()
+                                
+                                // Tilt Information (top right)
+                                if coordinator.connectionState.isConnected {
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Label("Roll: \(coordinator.systemState.tiltRoll, specifier: "%.1f")°", systemImage: "rotate.left")
+                                        Label("Pitch: \(coordinator.systemState.tiltPitch, specifier: "%.1f")°", systemImage: "rotate.right")
+                                    }
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                                    .padding(8)
+                                    .background(Color.black.opacity(0.7))
+                                    .cornerRadius(8)
+                                }
+                                
+                                // Launch Counter
+                                if coordinator.systemState.launchCounter > 0 {
+                                    Label("Launches: \(coordinator.systemState.launchCounter)", systemImage: "flame")
+                                        .font(.caption)
+                                        .foregroundColor(.white)
+                                        .padding(8)
+                                        .background(Color.black.opacity(0.7))
+                                        .cornerRadius(8)
+                                }
                             }
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(Color.black.opacity(0.7))
-                            .cornerRadius(8)
-                        }
-                        
-                        // Launch Counter
-                        if coordinator.systemState.launchCounter > 0 {
-                            Label("Launches: \(coordinator.systemState.launchCounter)", systemImage: "flame")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                                .padding(8)
-                                .background(Color.black.opacity(0.7))
-                                .cornerRadius(8)
+                            .padding()
+                            
+                            Spacer()
                         }
                     }
-                    .padding()
-                    
-                    Spacer()
                 }
             }
+            .frame(maxHeight: .infinity)
             
-            // Offset Control below camera view
-            OffsetControlView()
-                .frame(maxHeight: 200)
+            // Bottom section: X Offset Control (full width)
+            XOffsetControlView()
+                .frame(height: 100)
         }
+        .padding()
     }
 }
 
@@ -379,3 +433,5 @@ struct VisualizationView: View {
 }
 #endif 
 
+ 
+ 

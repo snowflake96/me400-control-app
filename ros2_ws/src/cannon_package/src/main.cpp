@@ -1,22 +1,25 @@
-#include "rclcpp/rclcpp.hpp"
+#include <memory>
+#include <rclcpp/rclcpp.hpp>
+#include "rclcpp/executors/multi_threaded_executor.hpp"
+#include "cannon_package/master.hpp"
 #include "cannon_package/motor_node.hpp"
-#include "cannon_package/sensor_node.hpp"
+#include "cannon_package/imu_node.hpp"
 
-int main(int argc, char** argv){
+int main(int argc, char ** argv) {
+  rclcpp::init(argc, argv);
 
-    rclcpp::init(argc, argv);
+  // Create both nodes
+  auto master_node = std::make_shared<MasterNode>();
+  auto motor_node  = std::make_shared<MotorNode>();
+  auto imu_node  = std::make_shared<ImuNode>();
 
-    // Create the nodes using the factory functions from node1.cpp and node2.cpp
-    // auto sensor_node = std::make_shared<SensorNode>();
-    // auto keyinput_node = std::make_shared<KeyInputNode>();
-    auto master_node = std::make_shared<MotorController>();
+  // Use MultiThreadedExecutor for concurrent callbacks
+  rclcpp::executors::MultiThreadedExecutor exec( rclcpp::ExecutorOptions(), /*num_threads=*/3);
+  exec.add_node(master_node);
+  exec.add_node(motor_node);
+  exec.add_node(imu_node);
 
-    auto executor = rclcpp::executors::SingleThreadedExecutor();
-    executor.add_node(master_node);
-
-    RCLCPP_INFO(master_node->get_logger(), "Spinning executor");
-    executor.spin();
-
-    rclcpp::shutdown();
-    return 0;
+  exec.spin();
+  rclcpp::shutdown();
+  return 0;
 }

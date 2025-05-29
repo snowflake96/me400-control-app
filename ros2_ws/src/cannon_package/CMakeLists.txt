@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(cannon_package)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Enable warnings
@@ -10,8 +10,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# === Option to use pigpio or pigpiod_if2 ===
-option(USE_PIGPIOD_IF2 "Use pigpiod_if2 (daemon mode) instead of pigpio (direct mode)" ON)
+add_compile_options(-Wno-psabi)
 
 # === Dependencies ===
 find_package(ament_cmake REQUIRED)
@@ -22,45 +21,17 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
-# === pigpio vs pigpiod_if2 ===
-if(USE_PIGPIOD_IF2)
-  message(STATUS "Using pigpiod_if2 (daemon mode)")
-  find_library(PIGPIO_LIB pigpiod_if2)
-else()
-  message(STATUS "Using pigpio (direct mode)")
-  find_library(PIGPIO_LIB pigpio)
-endif()
-
-if(NOT PIGPIO_LIB)
-  message(FATAL_ERROR "Requested pigpio library not found")
-endif()
-
-# === Include directories ===
-# include_directories(
-#   include
-#   /usr/local/include  # Optional — only needed if headers are installed there
-# )
-
 # === C++ Executable ===
 add_executable(main
   src/main.cpp
+  src/master.cpp
   src/motor_node.cpp
-  src/sensor_node.cpp
-  src/imu.cpp
-  src/keyinput.cpp
+  src/imu_node.cpp
 )
 
 target_include_directories(main PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  /usr/local/include  # only if pigpio.h is here
 )
-
-# # Add defines and link libraries depending on mode
-# if (USE_PIGPIOD_IF2)
-#     target_compile_definitions(main PRIVATE USE_DAEMON)
-# endif()
-
-target_link_libraries(main ${PIGPIO_LIB} i2c lgpio gpiod)
 
 ament_target_dependencies(main
   rclcpp
@@ -79,8 +50,8 @@ ament_python_install_package(${PROJECT_NAME})
 
 # === Install Python Modules ===
 install(PROGRAMS
-  scripts/web_node.py
   scripts/yolo_node.py
+  # scripts/mouse.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

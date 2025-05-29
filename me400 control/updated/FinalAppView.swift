@@ -121,21 +121,49 @@ struct FinalAppView: View {
                     
                     // Log message display
                     if !parameterManager.lastLogMessage.isEmpty {
-                        HStack {
-                            Text("Log: \(parameterManager.lastLogMessage)")
+                        HStack(spacing: 0) {
+                            Image(systemName: "info.circle")
                                 .foregroundColor(.orange)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.yellow.opacity(0.1))
-                                .cornerRadius(8)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
+                                .font(.caption)
+                                .padding(.trailing, 4)
+                            
+                            HStack(spacing: 0) {
+                                let messages = parameterManager.lastLogMessage.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+                                ForEach(0..<4, id: \.self) { index in
+                                    if index > 0 {
+                                        // Divider
+                                        Rectangle()
+                                            .fill(Color.gray.opacity(0.3))
+                                            .frame(width: 1)
+                                            .frame(height: 20)
+                                    }
+                                    
+                                    // Message box
+                                    HStack {
+                                        if index < messages.count {
+                                            Text(messages[index])
+                                                .font(.caption)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(Color.black.opacity(opacityForIndex(index)))
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                        } else {
+                                            Text(" ")
+                                                .font(.caption)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.horizontal, 4)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
                             
                             Spacer()
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.05))
+                        .background(Color.yellow.opacity(0.7))
+                        .cornerRadius(8)
                     }
                 }
                 
@@ -168,6 +196,16 @@ struct FinalAppView: View {
                 .frame(minWidth: 800, minHeight: 800)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+    }
+    
+    private func opacityForIndex(_ index: Int) -> Double {
+        switch index {
+        case 0: return 1.0    // 100% visible
+        case 1: return 0.8    // 80% visible
+        case 2: return 0.6    // 60% visible
+        case 3: return 0.4    // 40% visible
+        default: return 0.0
         }
     }
 }

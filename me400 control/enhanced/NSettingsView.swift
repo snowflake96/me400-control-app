@@ -4,6 +4,8 @@ struct NSettingsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
     @Environment(\.dismiss) var dismiss
+    @State private var originalHost: String = ""
+    @State private var originalPort: String = ""
     
     var body: some View {
         NavigationView {
@@ -13,13 +15,6 @@ struct NSettingsView: View {
                     connectionContent
                 }, header: {
                     Text("Connection")
-                })
-                
-                // Target Offset Settings
-                Section(content: {
-                    targetOffsetContent
-                }, header: {
-                    Text("Target Offset")
                 })
                 
                 // PID Tuning Step Sizes
@@ -34,12 +29,19 @@ struct NSettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
-                        // Update configuration when closing settings
-                        let config = settingsStore.createNetworkConfiguration()
-                        coordinator.updateConfiguration(config)
+                        // Only update configuration if server settings changed
+                        if settingsStore.serverHost != originalHost || settingsStore.serverPort != originalPort {
+                            let config = settingsStore.createNetworkConfiguration()
+                            coordinator.updateConfiguration(config)
+                        }
                         dismiss()
                     }
                 }
+            }
+            .onAppear {
+                // Store original values to detect changes
+                originalHost = settingsStore.serverHost
+                originalPort = settingsStore.serverPort
             }
         }
     }
@@ -76,6 +78,8 @@ struct NSettingsView: View {
                 .frame(width: 60, alignment: .leading)
             TextField("IP Address or hostname", text: $settingsStore.serverHost)
                 .textFieldStyle(.roundedBorder)
+                .disabled(coordinator.connectionState.isConnected)
+                .foregroundColor(coordinator.connectionState.isConnected ? .secondary : .primary)
         }
         
         HStack {
@@ -84,32 +88,18 @@ struct NSettingsView: View {
             TextField("Port number", text: $settingsStore.serverPort)
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.numberPad)
-        }
-    }
-    
-    @ViewBuilder
-    private var targetOffsetContent: some View {
-        HStack {
-            Text("X Offset")
-                .frame(width: 80, alignment: .leading)
-            Slider(value: $settingsStore.targetOffsetX, in: -1...1, step: 0.01)
-            Text(String(format: "%.2f", settingsStore.targetOffsetX))
-                .frame(width: 50)
-                .font(.system(.body, design: .monospaced))
+                .disabled(coordinator.connectionState.isConnected)
+                .foregroundColor(coordinator.connectionState.isConnected ? .secondary : .primary)
         }
         
-        HStack {
-            Text("Y Offset")
-                .frame(width: 80, alignment: .leading)
-            Slider(value: $settingsStore.targetOffsetY, in: -1...1, step: 0.01)
-            Text(String(format: "%.2f", settingsStore.targetOffsetY))
-                .frame(width: 50)
-                .font(.system(.body, design: .monospaced))
-        }
-        
-        Button("Reset Offsets") {
-            settingsStore.targetOffsetX = 0
-            settingsStore.targetOffsetY = 0
+        if coordinator.connectionState.isConnected {
+            HStack {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.blue)
+                Text("Disconnect to change server settings")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
     }
     
@@ -126,8 +116,10 @@ struct NSettingsView: View {
     // Helper function with simpler signature
     private func makePresetButton(_ host: String, _ port: String) -> some View {
         Button(action: {
-            settingsStore.serverHost = host
-            settingsStore.serverPort = port
+            if !coordinator.connectionState.isConnected {
+                settingsStore.serverHost = host
+                settingsStore.serverPort = port
+            }
         }) {
             VStack(spacing: 2) {
                 Text(host)
@@ -154,6 +146,8 @@ struct NSettingsView: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(coordinator.connectionState.isConnected)
+        .opacity(coordinator.connectionState.isConnected ? 0.6 : 1.0)
     }
 }
 

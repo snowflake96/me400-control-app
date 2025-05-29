@@ -12,6 +12,7 @@ final class ControlCoordinator: ObservableObject {
     @Published private(set) var systemState = SystemState()
     @Published private(set) var connectionState: ConnectionState = .disconnected
     @Published private(set) var isSynchronized: Bool = false
+    @Published private(set) var latency: TimeInterval = 0.0
     
     // Configuration
     private var configuration: NetworkConfiguration
@@ -21,12 +22,17 @@ final class ControlCoordinator: ObservableObject {
     
     // Periodic query timer
     private var queryTimer: Timer?
+    private var syncTimer: Timer?
     
     // Track target offset for comparison
     private var lastSentTargetOffset: (x: Double, y: Double)?
     
     // Weak reference to settings store for target offset sync
     private weak var settingsStore: SettingsStore?
+    
+    // Latency tracking
+    private var lastQueryTime: Date?
+    private let latencyQueue = DispatchQueue(label: "com.me400.latency")
     
     // MARK: - Initialization
     
@@ -63,10 +69,12 @@ final class ControlCoordinator: ObservableObject {
                 case .failed(let error):
                     self?.stateManager.updateConnectionState(false, error: error.localizedDescription)
                     self?.isSynchronized = false
+                    self?.stopQueryTimer()
                     
                 case .disconnected:
                     self?.stateManager.updateConnectionState(false, error: nil)
                     self?.isSynchronized = false
+                    self?.stopQueryTimer()
                     
                 case .connecting:
                     self?.stateManager.updateConnectionState(false, error: nil)
@@ -88,25 +96,8 @@ final class ControlCoordinator: ObservableObject {
             .receive(on: DispatchQueue.main)
             .assign(to: &$systemState)
         
-        // Monitor driving mode changes to manage query timer
-        $systemState
-            .map { $0.drivingMode }
-            .removeDuplicates()
-            .dropFirst() // Skip initial value
-            .sink { [weak self] mode in
-                guard let self = self,
-                      self.connectionState.isConnected,
-                      self.isSynchronized else { return }
-                
-                // Manage query timer based on mode changes
-                switch mode {
-                case .manual:
-                    self.stopQueryTimer()
-                case .autoAim, .autonomous:
-                    self.startQueryTimer()
-                }
-            }
-            .store(in: &cancellables)
+        // Remove mode-based query timer management - Query should be sent in all modes
+        // The timer will be started after synchronization and continue regardless of mode
     }
     
     // MARK: - Synchronization
@@ -115,33 +106,30 @@ final class ControlCoordinator: ObservableObject {
         // Reset synchronization state
         isSynchronized = false
         
+        // Set up latency tracking callback - must be done after each connection
+        stateManager.setCurrentStateCallback { [weak self] in
+            self?.updateLatency()
+        }
+        
         // Set up callback for when synchronization is complete
         stateManager.setSynchronizationCallback { [weak self] in
+            guard let self = self else { return }
             print("Client synchronized with server")
-            self?.isSynchronized = true
             
-            // Start query timer if already in AutoAim or Autonomous mode
-            if let mode = self?.systemState.drivingMode,
-               mode == .autoAim || mode == .autonomous {
-                Task { @MainActor in
-                    self?.startQueryTimer()
-                }
+            // Stop sync timer IMMEDIATELY to prevent further queries
+            Task { @MainActor in
+                self.stopSyncTimer()
+                
+                // Set synchronized flag after stopping timer
+                self.isSynchronized = true
+                
+                // Start regular query timer
+                self.startQueryTimer()
             }
         }
         
-        // Send initial query to request CurrentState
-        Task {
-            do {
-                try await sendQuery()
-                print("Query packet sent, waiting for CurrentState response...")
-            } catch {
-                print("Failed to send query packet: \(error)")
-                // Retry after a delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.setupSynchronization()
-                }
-            }
-        }
+        // Start continuous query timer for synchronization
+        startSyncTimer()
     }
     
     // MARK: - Connection Management
@@ -154,8 +142,20 @@ final class ControlCoordinator: ObservableObject {
         networkManager.disconnect()
         stateManager.reset()
         isSynchronized = false
+        
+        // Reset latency tracking
+        latencyQueue.async {
+            self.lastQueryTime = nil
+        }
+        
+        // Reset latency to 0 for clean UI
+        DispatchQueue.main.async {
+            self.latency = 0.0
+        }
+        
         Task { @MainActor in
-            stopQueryTimer() // Stop periodic queries
+            stopQueryTimer()
+            stopSyncTimer()
         }
     }
     
@@ -191,36 +191,30 @@ final class ControlCoordinator: ObservableObject {
     // MARK: - System Control
     
     func start() async throws {
+        // Send packet first
         let packet = PacketFactory.start()
         try await networkManager.send(packet)
         
-        // Update the state through the state manager
+        // Then update client state
         stateManager.updateRunningState(true)
     }
     
     func stop() async throws {
+        // Send packet first
         let packet = PacketFactory.stop()
         try await networkManager.send(packet)
         
-        // Update the state through the state manager
+        // Then update client state
         stateManager.updateRunningState(false)
     }
     
     func setMode(_ mode: DrivingMode) async throws {
-        // Update client state immediately for responsive UI
-        stateManager.updateDrivingMode(mode)
-        
         // Send mode change to server
         let packet = PacketFactory.setMode(mode)
         try await networkManager.send(packet)
         
-        // The periodic query will detect if server didn't update and resend if needed
-    }
-    
-    // Internal method to send mode without updating local state
-    private func sendModeToServer(_ mode: DrivingMode) async throws {
-        let packet = PacketFactory.setMode(mode)
-        try await networkManager.send(packet)
+        // Update client state immediately
+        stateManager.updateDrivingMode(mode)
     }
     
     // MARK: - PID Tuning
@@ -288,6 +282,11 @@ final class ControlCoordinator: ObservableObject {
     // MARK: - Query
     
     func sendQuery() async throws {
+        // Track query time for latency calculation
+        latencyQueue.async {
+            self.lastQueryTime = Date()
+        }
+        
         let packet = PacketFactory.query()
         try await networkManager.send(packet)
     }
@@ -300,35 +299,13 @@ final class ControlCoordinator: ObservableObject {
         
         guard connectionState.isConnected && isSynchronized else { return }
         
-        queryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+        // Send query every 0.2 seconds (5Hz) for ServerStateView updates
+        queryTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 
-                // Send query
+                // Simply send query to get current state from server
                 try? await self.sendQuery()
-                
-                // After receiving CurrentState, check for mismatches and update server if needed
-                // Give server time to respond
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-                
-                // Check if server mode matches client mode
-                if let serverMode = self.systemState.serverMode,
-                   serverMode != self.systemState.drivingMode {
-                    print("Mode mismatch detected - Client: \(self.systemState.drivingMode), Server: \(serverMode)")
-                    // Resend client's mode to server
-                    try? await self.sendModeToServer(self.systemState.drivingMode)
-                }
-                
-                // Check target offset synchronization only in AutoAim/Autonomous modes
-                if self.systemState.drivingMode == .autoAim || self.systemState.drivingMode == .autonomous {
-                    // Get current target offset from settings store
-                    if let settingsStore = self.settingsStore {
-                        await self.checkAndSyncTargetOffset(
-                            currentX: settingsStore.targetOffsetX,
-                            currentY: settingsStore.targetOffsetY
-                        )
-                    }
-                }
             }
         }
     }
@@ -339,25 +316,66 @@ final class ControlCoordinator: ObservableObject {
         queryTimer = nil
     }
     
+    @MainActor
+    private func startSyncTimer() {
+        stopSyncTimer() // Stop existing timer if any
+        
+        // Send query every 0.2 seconds during synchronization
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                
+                if !self.isSynchronized {
+                    do {
+                        try await self.sendQuery()
+                        print("Sync query sent, waiting for CurrentState...")
+                    } catch {
+                        print("Failed to send sync query: \(error)")
+                    }
+                }
+            }
+        }
+        
+        // Send first query immediately
+        Task {
+            do {
+                try await sendQuery()
+                print("Initial sync query sent")
+            } catch {
+                print("Failed to send initial sync query: \(error)")
+            }
+        }
+    }
+    
+    @MainActor
+    private func stopSyncTimer() {
+        syncTimer?.invalidate()
+        syncTimer = nil
+    }
+    
+    // MARK: - Latency Update
+    
+    func updateLatency() {
+        latencyQueue.async { [weak self] in
+            guard let self = self,
+                  let queryTime = self.lastQueryTime else { 
+                // If no query time, don't update latency (keep last value or 0)
+                return 
+            }
+            
+            let currentLatency = Date().timeIntervalSince(queryTime)
+            
+            DispatchQueue.main.async {
+                self.latency = currentLatency
+            }
+        }
+    }
+    
     // MARK: - Target Offset Synchronization
     
     func checkAndSyncTargetOffset(currentX: Double, currentY: Double) async {
-        // Check if server's target offset differs from our current values
-        let serverX = systemState.targetX
-        let serverY = systemState.targetY
-        
-        // Only send if values differ by more than 0.001
-        if abs(serverX - currentX) > 0.001 || abs(serverY - currentY) > 0.001 {
-            print("Target offset mismatch - Server: (\(serverX), \(serverY)), Client: (\(currentX), \(currentY))")
-            
-            // Send our target offset to server
-            do {
-                try await setOffset(x: currentX, y: currentY, z: 0)
-                print("Updated server with client target offset")
-            } catch {
-                print("Failed to update server target offset: \(error)")
-            }
-        }
+        // This method is no longer needed since server is authoritative
+        // Keeping for backward compatibility but it does nothing
     }
     
     // MARK: - Settings Store

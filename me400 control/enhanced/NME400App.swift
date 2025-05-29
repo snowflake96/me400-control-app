@@ -15,6 +15,7 @@ struct NME400App: App {
             NContentView()
                 .environmentObject(coordinator)
                 .environmentObject(settingsStore)
+                .ignoresSafeArea(.keyboard)
                 .onAppear {
                     // Set the settings store reference in coordinator
                     coordinator.setSettingsStore(settingsStore)
@@ -56,8 +57,8 @@ final class SettingsStore: ObservableObject {
     @AppStorage("cameraOffsetZ") var cameraOffsetZ: Double = 0.0
     
     // Target Offset Settings (for crosshair positioning)
-    @AppStorage("targetOffsetX") var targetOffsetX: Double = 0.0
-    @AppStorage("targetOffsetY") var targetOffsetY: Double = 0.0
+    @Published var targetOffsetX: Double = 0.0
+    @Published var targetOffsetY: Double = 0.0
     
     // Initialize PID values from system state
     func initializePIDFromSystemState(_ state: SystemState) {
