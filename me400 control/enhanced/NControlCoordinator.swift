@@ -25,6 +25,9 @@ final class ControlCoordinator: ObservableObject {
     // Track target offset for comparison
     private var lastSentTargetOffset: (x: Double, y: Double)?
     
+    // Weak reference to settings store for target offset sync
+    private weak var settingsStore: SettingsStore?
+    
     // MARK: - Initialization
     
     init(
@@ -84,6 +87,26 @@ final class ControlCoordinator: ObservableObject {
         stateManager.state
             .receive(on: DispatchQueue.main)
             .assign(to: &$systemState)
+        
+        // Monitor driving mode changes to manage query timer
+        $systemState
+            .map { $0.drivingMode }
+            .removeDuplicates()
+            .dropFirst() // Skip initial value
+            .sink { [weak self] mode in
+                guard let self = self,
+                      self.connectionState.isConnected,
+                      self.isSynchronized else { return }
+                
+                // Manage query timer based on mode changes
+                switch mode {
+                case .manual:
+                    self.stopQueryTimer()
+                case .autoAim, .autonomous:
+                    self.startQueryTimer()
+                }
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Synchronization
@@ -184,21 +207,20 @@ final class ControlCoordinator: ObservableObject {
     }
     
     func setMode(_ mode: DrivingMode) async throws {
+        // Update client state immediately for responsive UI
+        stateManager.updateDrivingMode(mode)
+        
+        // Send mode change to server
         let packet = PacketFactory.setMode(mode)
         try await networkManager.send(packet)
         
-        // Update the state through the state manager
-        stateManager.updateDrivingMode(mode)
-        
-        // Manage periodic query timer
-        await MainActor.run {
-            switch mode {
-            case .manual:
-                stopQueryTimer()
-            case .autoAim, .autonomous:
-                startQueryTimer()
-            }
-        }
+        // The periodic query will detect if server didn't update and resend if needed
+    }
+    
+    // Internal method to send mode without updating local state
+    private func sendModeToServer(_ mode: DrivingMode) async throws {
+        let packet = PacketFactory.setMode(mode)
+        try await networkManager.send(packet)
     }
     
     // MARK: - PID Tuning
@@ -278,15 +300,35 @@ final class ControlCoordinator: ObservableObject {
         
         guard connectionState.isConnected && isSynchronized else { return }
         
-        queryTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        queryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 
                 // Send query
                 try? await self.sendQuery()
                 
-                // Store current target offset to check if server needs updating
-                // This will be handled when CurrentState packet is received
+                // After receiving CurrentState, check for mismatches and update server if needed
+                // Give server time to respond
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                
+                // Check if server mode matches client mode
+                if let serverMode = self.systemState.serverMode,
+                   serverMode != self.systemState.drivingMode {
+                    print("Mode mismatch detected - Client: \(self.systemState.drivingMode), Server: \(serverMode)")
+                    // Resend client's mode to server
+                    try? await self.sendModeToServer(self.systemState.drivingMode)
+                }
+                
+                // Check target offset synchronization only in AutoAim/Autonomous modes
+                if self.systemState.drivingMode == .autoAim || self.systemState.drivingMode == .autonomous {
+                    // Get current target offset from settings store
+                    if let settingsStore = self.settingsStore {
+                        await self.checkAndSyncTargetOffset(
+                            currentX: settingsStore.targetOffsetX,
+                            currentY: settingsStore.targetOffsetY
+                        )
+                    }
+                }
             }
         }
     }
@@ -316,6 +358,12 @@ final class ControlCoordinator: ObservableObject {
                 print("Failed to update server target offset: \(error)")
             }
         }
+    }
+    
+    // MARK: - Settings Store
+    
+    func setSettingsStore(_ store: SettingsStore) {
+        self.settingsStore = store
     }
 }
 

@@ -359,19 +359,6 @@ struct AutoAimControlsView: View {
                 // ESC value is tracked locally, not from system state
             }
         }
-        .onReceive(coordinator.$systemState) { _ in
-            // Check target offset synchronization when in AutoAim mode
-            if coordinator.systemState.drivingMode == .autoAim && 
-               coordinator.connectionState.isConnected && 
-               coordinator.isSynchronized {
-                Task {
-                    await coordinator.checkAndSyncTargetOffset(
-                        currentX: settingsStore.targetOffsetX,
-                        currentY: settingsStore.targetOffsetY
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -508,19 +495,6 @@ struct AutonomousControlsView: View {
                         }
                         .buttonStyle(.bordered)
                     }
-                }
-            }
-        }
-        .onReceive(coordinator.$systemState) { _ in
-            // Check target offset synchronization when in Autonomous mode
-            if coordinator.systemState.drivingMode == .autonomous && 
-               coordinator.connectionState.isConnected && 
-               coordinator.isSynchronized {
-                Task {
-                    await coordinator.checkAndSyncTargetOffset(
-                        currentX: settingsStore.targetOffsetX,
-                        currentY: settingsStore.targetOffsetY
-                    )
                 }
             }
         }

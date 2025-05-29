@@ -6,11 +6,19 @@ struct NME400App: App {
     @StateObject private var coordinator = ControlCoordinatorFactory.create()
     @StateObject private var settingsStore = SettingsStore()
     
+    init() {
+        // This will be called after StateObject initialization
+    }
+    
     var body: some Scene {
         WindowGroup {
             NContentView()
                 .environmentObject(coordinator)
                 .environmentObject(settingsStore)
+                .onAppear {
+                    // Set the settings store reference in coordinator
+                    coordinator.setSettingsStore(settingsStore)
+                }
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)

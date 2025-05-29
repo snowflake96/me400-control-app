@@ -11,6 +11,9 @@ struct SystemState {
     var drivingMode: DrivingMode = .manual
     var isRunning: Bool = false
     
+    // Server's reported mode (for comparison)
+    var serverMode: DrivingMode? = nil
+    
     // Parameters
     var launchCounter: UInt32 = 0
     var maxConsecutiveNans: UInt32 = 10
@@ -197,28 +200,47 @@ final class SystemStateManager: SystemStateManagerProtocol {
         let isInitialSync = !hasSynchronized
         
         updateState { state in
-            // Only update mode during initial synchronization
-            // After that, the client controls the mode through UI
+            // Always store server's mode for comparison
+            if let serverDrivingMode = DrivingMode(rawValue: mode) {
+                state.serverMode = serverDrivingMode
+            }
+            
             if isInitialSync {
+                // Initial sync: adopt server's state completely
                 if let drivingMode = DrivingMode(rawValue: mode) {
                     state.drivingMode = drivingMode
                 }
+                
+                // Update all parameters from server
+                state.launchCounter = launchCounter
+                state.maxConsecutiveNans = maxConsecutiveNans
+                state.targetX = targetX
+                state.targetY = targetY
+                state.stopThrottle = stopThrottle
+                state.motorOffset = motorOffset
+                state.defaultSpeed = defaultSpeed
+                state.cutoffFrequency = cutoffFreq
+            } else {
+                // After sync: only update server-controlled values
+                // Don't update mode - client controls it
+                // Only update values that server manages (like launch counter)
+                state.launchCounter = launchCounter
+                
+                // Store server's view of parameters for comparison
+                // These will be used by coordinator to detect mismatches
+                state.targetX = targetX
+                state.targetY = targetY
+                state.maxConsecutiveNans = maxConsecutiveNans
+                state.stopThrottle = stopThrottle
+                state.motorOffset = motorOffset
+                state.defaultSpeed = defaultSpeed
+                state.cutoffFrequency = cutoffFreq
             }
             
-            // Update running state
+            // Always update running state from server
             if let sysState = RunningState(rawValue: systemState) {
                 state.isRunning = sysState.isRunning
             }
-            
-            // Update parameters
-            state.launchCounter = launchCounter
-            state.maxConsecutiveNans = maxConsecutiveNans
-            state.targetX = targetX
-            state.targetY = targetY
-            state.stopThrottle = stopThrottle
-            state.motorOffset = motorOffset
-            state.defaultSpeed = defaultSpeed
-            state.cutoffFrequency = cutoffFreq
         }
         
         // Mark as synchronized and trigger callback
@@ -310,15 +332,15 @@ final class SystemStateManager: SystemStateManagerProtocol {
         }
     }
     
-    func updateDrivingMode(_ mode: DrivingMode) {
-        updateState { state in
-            state.drivingMode = mode
-        }
-    }
-    
     func updateRunningState(_ isRunning: Bool) {
         updateState { state in
             state.isRunning = isRunning
+        }
+    }
+    
+    func updateDrivingMode(_ mode: DrivingMode) {
+        updateState { state in
+            state.drivingMode = mode
         }
     }
 }
