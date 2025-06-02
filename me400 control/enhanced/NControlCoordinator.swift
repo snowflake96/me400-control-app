@@ -22,7 +22,6 @@ final class ControlCoordinator: ObservableObject {
     
     // Periodic query timer
     private var queryTimer: Timer?
-    private var syncTimer: Timer?
     
     // Track target offset for comparison
     private var lastSentTargetOffset: (x: Double, y: Double)?
@@ -31,17 +30,7 @@ final class ControlCoordinator: ObservableObject {
     private weak var settingsStore: SettingsStore?
     
     // Latency tracking
-    private var _lastQueryTime: Date?
-    private let latencyQueue = DispatchQueue(label: "com.me400.latency")
-    
-    private var lastQueryTime: Date? {
-        get {
-            latencyQueue.sync { _lastQueryTime }
-        }
-        set {
-            latencyQueue.sync { _lastQueryTime = newValue }
-        }
-    }
+    private var lastQueryTime: Date?
     
     // MARK: - Initialization
     
@@ -69,23 +58,32 @@ final class ControlCoordinator: ObservableObject {
                 // Update state manager with connection status
                 switch state {
                 case .connected:
+                    print("ControlCoordinator: Connection state changed to connected")
                     self?.stateManager.updateConnectionState(true, error: nil)
                     // Delay slightly to ensure connection is stable
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        print("ControlCoordinator: Starting synchronization setup after delay")
                         self?.setupSynchronization()
                     }
                     
                 case .failed(let error):
+                    print("ControlCoordinator: Connection failed: \(error)")
                     self?.stateManager.updateConnectionState(false, error: error.localizedDescription)
                     self?.isSynchronized = false
                     self?.stopQueryTimer()
+                    // Reset sync state to ensure clean sync on reconnect
+                    self?.stateManager.resetSynchronization()
                     
                 case .disconnected:
+                    print("ControlCoordinator: Connection state changed to disconnected")
                     self?.stateManager.updateConnectionState(false, error: nil)
                     self?.isSynchronized = false
                     self?.stopQueryTimer()
+                    // Reset sync state on disconnect
+                    self?.stateManager.resetSynchronization()
                     
                 case .connecting:
+                    print("ControlCoordinator: Connection state changed to connecting")
                     self?.stateManager.updateConnectionState(false, error: nil)
                     self?.isSynchronized = false
                 }
@@ -112,8 +110,12 @@ final class ControlCoordinator: ObservableObject {
     // MARK: - Synchronization
     
     private func setupSynchronization() {
+        print("ControlCoordinator: Setting up synchronization")
         // Reset synchronization state
         isSynchronized = false
+        
+        // Ensure state manager sync is reset
+        stateManager.resetSynchronization()
         
         // Set up latency tracking callback - must be done after each connection
         stateManager.setCurrentStateCallback { [weak self] in
@@ -123,22 +125,31 @@ final class ControlCoordinator: ObservableObject {
         // Set up callback for when synchronization is complete
         stateManager.setSynchronizationCallback { [weak self] in
             guard let self = self else { return }
+            print("ControlCoordinator: Synchronization callback triggered")
             print("Client synchronized with server")
             
-            // Stop sync timer IMMEDIATELY to prevent further queries
-            Task { @MainActor in
-                self.stopSyncTimer()
-                
-                // Set synchronized flag after stopping timer
-                self.isSynchronized = true
-                
-                // Start regular query timer
-                self.startQueryTimer()
-            }
+            // Set synchronized flag
+            self.isSynchronized = true
+            
+            // Start regular query timer for periodic updates
+            self.startQueryTimer()
         }
         
-        // Start continuous query timer for synchronization
-        startSyncTimer()
+        print("ControlCoordinator: Callbacks set, sending initial query")
+        
+        // Send a single query to get initial state
+        Task {
+            do {
+                try await sendQuery()
+                print("Initial sync query sent")
+            } catch {
+                print("Failed to send initial sync query: \(error)")
+                // Try again after a delay if failed
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.setupSynchronization()
+                }
+            }
+        }
     }
     
     // MARK: - Connection Management
@@ -156,14 +167,9 @@ final class ControlCoordinator: ObservableObject {
         lastQueryTime = nil
         
         // Reset latency to 0 for clean UI
-        DispatchQueue.main.async {
-            self.latency = 0.0
-        }
+        latency = 0.0
         
-        Task { @MainActor in
-            stopQueryTimer()
-            stopSyncTimer()
-        }
+        stopQueryTimer()
     }
     
     func updateConfiguration(_ config: NetworkConfiguration) {
@@ -281,7 +287,7 @@ final class ControlCoordinator: ObservableObject {
         try await networkManager.send(packet)
     }
     
-    func setMaxConsecutiveNans(_ maxNans: UInt32) async throws {
+    func setMaxConsecutiveNans(_ maxNans: UInt8) async throws {
         let packet = PacketFactory.setMaxConsecutiveNans(maxNans)
         try await networkManager.send(packet)
     }
@@ -331,57 +337,16 @@ final class ControlCoordinator: ObservableObject {
         queryTimer = nil
     }
     
-    @MainActor
-    private func startSyncTimer() {
-        stopSyncTimer() // Stop existing timer if any
-        
-        // Send query every 0.2 seconds during synchronization
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                
-                if !self.isSynchronized {
-                    do {
-                        try await self.sendQuery()
-                        print("Sync query sent, waiting for CurrentState...")
-                    } catch {
-                        print("Failed to send sync query: \(error)")
-                    }
-                }
-            }
-        }
-        
-        // Send first query immediately
-        Task {
-            do {
-                try await sendQuery()
-                print("Initial sync query sent")
-            } catch {
-                print("Failed to send initial sync query: \(error)")
-            }
-        }
-    }
-    
-    @MainActor
-    private func stopSyncTimer() {
-        syncTimer?.invalidate()
-        syncTimer = nil
-    }
-    
     // MARK: - Latency Update
     
     func updateLatency() {
-        let queryTime = lastQueryTime
-        guard let queryTime = queryTime else {
+        guard let queryTime = lastQueryTime else { 
             // If no query time, don't update latency (keep last value or 0)
-            return
+            return 
         }
         
         let currentLatency = Date().timeIntervalSince(queryTime)
-        
-        DispatchQueue.main.async {
-            self.latency = currentLatency
-        }
+        latency = currentLatency
     }
     
     // MARK: - Target Offset Synchronization

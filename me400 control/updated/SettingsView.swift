@@ -658,39 +658,39 @@ struct ConnectionSettings: View {
     ]
     
     var body: some View {
-        VStack(spacing: 20) {
-            ServerConnectingView()
-            
-            // Frequently Used Connections
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Frequent Connections")
-                    .font(.headline)
-                    .padding(.horizontal)
+            VStack(spacing: 20) {
+                ServerConnectingView()
                 
-                ForEach(frequentConnections, id: \.id) { connection in
-                    Button(action: {
-                        parameterManager.serverHost = connection.host
-                        parameterManager.serverPort = connection.port
-                    }) {
-                        HStack {
-                            Text(connection.host)
-                                .foregroundColor(.primary)
-                            Text(":")
-                                .foregroundColor(.gray)
-                            Text(connection.port)
-                                .foregroundColor(.primary)
+                // Frequently Used Connections
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Frequent Connections")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    ForEach(frequentConnections, id: \.id) { connection in
+                        Button(action: {
+                            parameterManager.serverHost = connection.host
+                            parameterManager.serverPort = connection.port
+                        }) {
+                            HStack {
+                                Text(connection.host)
+                                    .foregroundColor(.primary)
+                                Text(":")
+                                    .foregroundColor(.gray)
+                                Text(connection.port)
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(6)
                         }
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(6)
+                        .disabled(parameterManager.serverConnected)
+                        .padding(.horizontal)
                     }
-                    .disabled(parameterManager.serverConnected)
-                    .padding(.horizontal)
                 }
+                .padding(.vertical)
             }
-            .padding(.vertical)
-        }
     }
 }
 
@@ -766,7 +766,7 @@ struct PIDStepSizesSettings: View {
                     value: $parameterManager.yawIntegralThresholdStepSize,
                     options: stepOptions
                 )
-            }
+        }
             .padding(.vertical)
             
             Spacer()

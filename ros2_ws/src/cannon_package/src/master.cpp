@@ -8,7 +8,7 @@ using namespace std::chrono_literals;
 
 MasterNode::MasterNode() : Node("master_node"), mode_{Mode::Manual}, state_{State::Stopped}, server_(12345)
 {
-  RCLCPP_INFO(this->get_logger(), "Initializing Master Node");
+  RCLCPP_INFO(this->get_logger(), "Initializing master node...");
 
   // Publisher for motor commands
   servo_command_pub_ = this->create_publisher<geometry_msgs::msg::Vector3>("servo_command", 10);
@@ -45,6 +45,8 @@ MasterNode::MasterNode() : Node("master_node"), mode_{Mode::Manual}, state_{Stat
   // Launch server in a separate thread. Pass the handler function to process received data packets.
   auto handler = std::bind(&MasterNode::server_handler, this, _1, _2);
   server_thread_ = std::thread(&Server::launchServer, &server_, handler);
+
+  RCLCPP_INFO(this->get_logger(), "Master node up and running.");
 }
 
 MasterNode::~MasterNode() {
@@ -57,7 +59,7 @@ MasterNode::~MasterNode() {
 }
 
 void MasterNode::init_parameters_from_yaml(){
-    // Declare all parameters
+    // Declare all parameters and their defaults val
     this->declare_parameter("use_interpolation", false);
     // Pitch
     this->declare_parameter("pid_pitch.kp", 1.0);
@@ -185,6 +187,9 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
     case DataPacket::Type::Start:
       if (state_ == State::Stopped) {
         state_ = State::Running;
+        if(mode_ == Mode::Autonomous){
+          accelerate_to_default_speed();
+        }
         reset();
         log_msg = "Started motors";
       }
@@ -219,6 +224,7 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
     case DataPacket::Type::SetManual:
       if(mode_ != Mode::Manual){
         mode_ = Mode::Manual;
+        send_servo_command(0.0, 0.0);
         log_msg = "Set to manual mode";
       }
       else{
@@ -258,6 +264,16 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
       log_msg = std::format("Set yaw integral limit to: {:.3f}", w);
       break;
     
+    case DataPacket::Type::SetPitchIntegralThreshold:
+      pid_pitch_.setIntegralThreshold(w);
+      log_msg = std::format("Set pitch integral threshold to: {:.3f}", w);
+      break;
+
+    case DataPacket::Type::SetYawIntegralThreshold:
+      pid_yaw_.setIntegralThreshold(w);
+      log_msg = std::format("Set yaw integral threshold to: {:.3f}", w);
+      break;
+    
     case DataPacket::Type::SetLaunchThreshold:
       launch_threshold_.EPS = std::abs(threshold.EPS); 
       launch_threshold_.N = threshold.N;
@@ -267,7 +283,7 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
       break;
     
     case DataPacket::Type::Query:
-      log_msg = handle_client_query(client_fd);
+      handle_client_query(client_fd); // No log
       break;
 
     case DataPacket::Type::MotorOffset: {
@@ -287,13 +303,13 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
       break;
     
     case DataPacket::Type::SetStopThrottle:
-      stop_throttle_ = std::clamp(w, -0.1, 0.1);
+      stop_throttle_ = std::clamp(w, -0.3, 0.3);
       send_esc_command(current_speed_); // Update the throttle
       log_msg = std::format("Set stop throttle to: {:.3f}", stop_throttle_);
       break;
     
     case DataPacket::Type::SetMaxConsecutiveNans:
-      max_consecutive_nans_ = packet.data.uint32;
+      max_consecutive_nans_ = packet.data.uint8;
       log_msg = std::format("Set max consecutive nans to: {}", max_consecutive_nans_);
       break;
     
@@ -306,12 +322,14 @@ void MasterNode::server_handler(const DataPacket &packet, int client_fd) {
       log_msg = "Unknown packet type received";
   }
   
-  RCLCPP_INFO(this->get_logger(), "%s", log_msg.c_str());
-  server_.sendLogToClient(log_msg, client_fd);
+  if(!log_msg.empty()){
+    RCLCPP_INFO(this->get_logger(), "%s", log_msg.c_str());
+    server_.sendLogToClient(log_msg, client_fd);
+  }
 }
 
 // Helper function to handle query from client and return logging message
-std::string MasterNode::handle_client_query(int client_fd){
+void MasterNode::handle_client_query(int client_fd){
   DataPacket packet{};
   packet.type = DataPacket::Type::CurrentState;
   auto& state_info = packet.data.state;
@@ -345,7 +363,9 @@ std::string MasterNode::handle_client_query(int client_fd){
   }
 
   // Other state variables
-  state_info.launch_counter = launch_counter_;
+  state_info.offset_found = found_offset_
+  state_info.use_interpolation = USE_INTERPOLATION;
+  state_info.max_nans = max_consecutive_nans_;
   state_info.N = launch_threshold_.N;
   state_info.EPS = launch_threshold_.EPS;
   state_info.target_x = target_.x;
@@ -354,22 +374,37 @@ std::string MasterNode::handle_client_query(int client_fd){
   state_info.motor_offset = motor_offset_;
   state_info.default_speed = DEFAULT_SPEED_;
   state_info.cutoff_freq = lpf_x.getCutoffFrequency(); // lpf_x and lpf_y use the same cutoff frequency
-
   server_.sendDataToClient(packet, client_fd);
-  return std::format("Mode: {}  -  State: {}", mode, state);
+
+  // PID settings
+  packet.type = DataPacket::Type::PIDSettings;
+
+  auto& p_info = packet.data.pid_settings.pitch;
+  std::tie(p_info.P, p_info.I) = pid_pitch_.getPIgains();
+  p_info.I_limit = pid_pitch_.getIntegralLimit();
+  p_info.I_threshold = pid_pitch_.getIntegralThreshold();
+
+  auto& y_info = packet.data.pid_settings.yaw;
+  std::tie(y_info.P, y_info.I) = pid_yaw_.getPIgains();
+  y_info.I_limit = pid_yaw_.getIntegralLimit();
+  y_info.I_threshold = pid_yaw_.getIntegralThreshold();
+  
+  server_.sendDataToClient(packet, client_fd);
+  return;
 }
 
 // Function to reset all parameters, control, and motor speed to default (keep mode and state same)
 void MasterNode::reset(){
   // Reset params to default
   launch_counter_ = 0;
+  nan_counter_ = 0;
   found_offset_ = false;
   // Reset control to default
   pid_pitch_.reset();
   pid_yaw_.reset();
   lpf_x.reset();
   lpf_y.reset();
-  // Reset motor speed to default if running
+  // Reset motor speed to default if running and in autonomous mode
   if(state_ == State::Running && mode_ == Mode::Autonomous){
     if(current_speed_ < DEFAULT_SPEED_){
       accelerate_to_default_speed();
@@ -389,7 +424,7 @@ void MasterNode::accelerate_to_default_speed(){
 // Function to compute and set the offset from the pitch angle to the bell
 void MasterNode::set_offset_from_pitch(const double pitch){
 
-  target_.x = 0.0;
+  target_.x = 0.01;
   target_.y = spline_.interpolate(pitch);
 
   std::string log = std::format("Offset found - x: {:.3f}, y: {:.3f}", target_.x.load(), target_.y.load());
@@ -405,8 +440,6 @@ void MasterNode::set_offset_from_pitch(const double pitch){
 
 // Callback invoked upon receiving target values from the "bbox".
 void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr msg) {
-  static size_t nan_counter=0;
-
   // Normalize and convert to cartersian coordinates
   double x1 = 2.0 * msg->x - 1.0;  // x1 normalized to [-1,1]
   double y1 = -(2.0 * msg->y - 1.0);  // y1 normalized to [-1,1]
@@ -428,7 +461,7 @@ void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr m
 
   // If no bounding box is detected for max_consecutive_nans_ times, stop servo
   if(std::isnan(x1)){
-    if(++nan_counter == max_consecutive_nans_){
+    if(++nan_counter_ == max_consecutive_nans_){
       send_servo_command(0.0, 0.0); // Stop the servos
       std::string log_msg = std::format("No detection for {} consecutive times. Stopping servos.", max_consecutive_nans_);
       RCLCPP_INFO(this->get_logger(), log_msg.c_str());
@@ -436,10 +469,9 @@ void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr m
     }
     return;
   }
-  else if(nan_counter > 0){
-    nan_counter = 0;
-    reset(); // This resets both the launch counter and the found_offset flag
-    const char* log_msg = "New bbox detection. Re-enabling servos.";
+  else if(nan_counter_ > 0){
+    reset(); // This resets the launch counter, nan counter, and the found_offset flag
+    const char* log_msg = "New bbox detection. Aiming.";
     RCLCPP_INFO(this->get_logger(), log_msg);
     server_.sendLogToClient(log_msg);
   }
@@ -457,33 +489,36 @@ void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr m
   packet.data.vector3.x = center_x;
   packet.data.vector3.y = center_y;
   server_.sendDataToClient(packet);
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Filtered BBOX - x: %.3f  y: %.3f", center_x, center_y);
+  // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Filtered BBOX - x: %.3f  y: %.3f", center_x, center_y);
 
   // Compute and send control signal to servos
   double control_signal_pitch = pid_pitch_.compute(center_y, target_.y);
   double control_signal_yaw = pid_yaw_.compute(center_x, target_.x);
   send_servo_command(control_signal_pitch, control_signal_yaw);
 
-  double psignal, isignal;
-  psignal = pid_pitch_.getLastPsignal(); isignal = pid_pitch_.getLastIsignal();
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Pitch PID - P: %.3f  I: %.3f  Total output: %.3f", psignal, isignal, control_signal_pitch);
-  psignal = pid_yaw_.getLastPsignal(); isignal = pid_yaw_.getLastIsignal();
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Yaw PID - P: %.3f  I: %.3f  Total output: %.3f", psignal, isignal, control_signal_yaw);
+  // double psignal, isignal;
+  // std::tie(psignal, isignal) = pid_pitch_.getLastPIsignals();
+  // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Pitch PID - P: %.3f  I: %.3f  Total output: %.3f", psignal, isignal, control_signal_pitch);
+  // std::tie(psignal, isignal) = pid_yaw_.getLastPIsignals();
+  // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Yaw PID - P: %.3f  I: %.3f  Total output: %.3f", psignal, isignal, control_signal_yaw);
 
   if(mode_ == Mode::Autonomous){
     double p_error = pid_pitch_.getLastError();
     double y_error = pid_yaw_.getLastError();
     if(USE_INTERPOLATION && !found_offset_){
-      static constexpr double deg_to_rad = M_PI / 180.0;
-      static constexpr double rad_to_deg = 180.0 / M_PI;
-      static constexpr double FOV_Y = 41.0; // vertical FOV in degrees
-      double bell_angle = std::atan(center_y * std::tan(0.5 * FOV_Y * deg_to_rad)) * rad_to_deg; // Bell angle in camera frame
-      double pitch_to_bell = tilt_.pitch + bell_angle;
-      set_offset_from_pitch(pitch_to_bell);
-      found_offset_ = true;
+      if(std::abs(p_error) < 0.2 && std::abs(y_error) < 0.2){
+        // If the bell is close enough to the center of the frame, compute the offset
+        static constexpr double deg_to_rad = M_PI / 180.0;
+        static constexpr double rad_to_deg = 180.0 / M_PI;
+        static constexpr double FOV_Y = 41.0; // vertical FOV in degrees
+        double bell_angle = std::atan(center_y * std::tan(0.5 * FOV_Y * deg_to_rad)) * rad_to_deg; // Bell angle in camera frame
+        double pitch_to_bell = tilt_.pitch + bell_angle;
+        set_offset_from_pitch(pitch_to_bell);
+        found_offset_ = true;
+      }
     }
-    // Execute launch command
     else if(std::abs(p_error) < launch_threshold_.EPS && std::abs(y_error) < launch_threshold_.EPS){
+      // Execute launch command
       if(++launch_counter_ > launch_threshold_.N){
         const char* log = "Launching cannon!";
         RCLCPP_INFO(this->get_logger(), log);
@@ -506,7 +541,7 @@ void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr m
 
     // Send the launch counter to the client
     packet.type = DataPacket::Type::LaunchCounter;
-    packet.data.uint32 = launch_counter_;
+    packet.data.uint8 = launch_counter_;
     server_.sendDataToClient(packet);
     RCLCPP_INFO_STREAM(this->get_logger(), "Launch counter: " << launch_counter_);
   }
@@ -514,14 +549,19 @@ void MasterNode::bbox_callback(const geometry_msgs::msg::Quaternion::SharedPtr m
 
 // Add the callback implementation at the end of the file
 void MasterNode::imu_callback(const geometry_msgs::msg::Vector3::SharedPtr msg) {
+  static size_t counter = 0;
   tilt_.roll = msg->x;
   tilt_.pitch = msg->y;
 
-  DataPacket packet;
-  packet.type = DataPacket::Type::Tilt;
-  packet.data.vector3.x = tilt_.roll;
-  packet.data.vector3.y = tilt_.pitch;
-  server_.sendDataToClient(packet);
+  // Send to client at 5Hz (published at 50Hz)
+  if(++counter == 10){
+    counter = 0;
+    DataPacket packet;
+    packet.type = DataPacket::Type::Tilt;
+    packet.data.vector3.x = tilt_.roll;
+    packet.data.vector3.y = tilt_.pitch;
+    server_.sendDataToClient(packet);
+  }
 }
 
 void MasterNode::send_servo_command(double p, double y){

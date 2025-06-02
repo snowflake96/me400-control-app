@@ -64,17 +64,15 @@ public:
      * @param channel   Channel number (0–15)
      * @param speed     -1.0 (full reverse) to +1.0 (full forward)
      *                  0.0 → stop (center pulse)
-     * @param cw_min_us Minimum pulse width for clockwise motion (CW)
-     * @param cw_max_us Maximum pulse width for clockwise motion (CW)
-     * @param ccw_min_us Minimum pulse width for counter-clockwise motion (CCW)
-     * @param ccw_max_us Maximum pulse width for counter-clockwise motion (CCW)
+     * @param cw_center_us  Center point for clockwise motion (CW)
+     * @param ccw_center_us Center point for counter-clockwise motion (CCW)
+     * @param range_us   How far from center points to go in each direction
      */
     void setServoSpeed(uint8_t channel,
                       float speed,
-                      const float cw_min_us = 1000.0f,
-                      const float cw_max_us = 1740.0f,
-                      const float ccw_min_us = 1880.0f,
-                      const float ccw_max_us = 2600.0f);
+                      const float cw_center_us = 1740.0f,
+                      const float ccw_center_us = 1880.0f,
+                      const float range_us = 700.0f);
 
     /**
      * @brief Set ESC throttle on a channel.
@@ -231,25 +229,24 @@ inline void PCA9685Driver::setServoPosition(uint8_t channel,
 // Set continuous-servo speed normalized [-1.0, +1.0]
 inline void PCA9685Driver::setServoSpeed(uint8_t channel,
                                         float speed,
-                                        const float cw_min_us,
-                                        const float cw_max_us,
-                                        const float ccw_min_us,
-                                        const float ccw_max_us) {
+                                        const float cw_center_us,
+                                        const float ccw_center_us,
+                                        const float range_us) {
   if (std::isnan(speed)) return;
 
   float clipped = std::clamp(speed, -1.0f, 1.0f);
   float pulse = 0.0f;
 
   if (clipped > 0.0f) {
-    // CW: from stop (cw_max_us) down to cw_min_us
-    pulse = cw_max_us + clipped * (cw_min_us - cw_max_us);
+    // CW: from center down to (center - range)
+    pulse = cw_center_us - clipped * range_us;
   }
   else if (clipped < 0.0f) {
-    // CCW: from stop (ccw_min_us) up to ccw_max_us
-    pulse = ccw_min_us + (-clipped) * (ccw_max_us - ccw_min_us);
+    // CCW: from center up to (center + range)
+    pulse = ccw_center_us + (-clipped) * range_us;
   } else {
-    // speed == 0, stop: use either neutral pulse
-    pulse = 0.5f * (cw_max_us + ccw_min_us);  // or assume they are equal
+    // speed == 0, stop: use average of center points
+    pulse = 0.5f * (cw_center_us + ccw_center_us);
   }
 
   setPulseWidth(channel, pulse);

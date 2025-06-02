@@ -9,7 +9,7 @@ struct NCameraView: View {
     private let aspectRatio: CGFloat = 16.0 / 9.0
     
     // Zoomed view range
-    private let viewRange: Double = 0.45 // Shows -0.45 to 0.45
+    private let viewRange: Double = 0.25 // Shows -0.25 to 0.25
     private let gridInterval: Double = 0.05
     
     var body: some View {
@@ -415,7 +415,7 @@ struct CameraInfoView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Camera View (Zoomed ±0.45)")
+            Text("Camera View (Zoomed ±0.25)")
                 .font(.caption)
                 .fontWeight(.semibold)
             
@@ -464,15 +464,31 @@ struct YOffsetControlView: View {
                 .font(.caption)
                 .fontWeight(.medium)
             
-            Text(String(format: "%.3f", settingsStore.targetOffsetY))
-                .font(.system(size: 12, design: .monospaced))
-                .frame(width: 60)
+            HStack(spacing: 4) {
+                Button("-") {
+                    settingsStore.targetOffsetY = max(-0.1, settingsStore.targetOffsetY - 0.001)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!coordinator.connectionState.isConnected)
+                
+                Text(String(format: "%.3f", settingsStore.targetOffsetY))
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(width: 60)
+                
+                Button("+") {
+                    settingsStore.targetOffsetY = min(0.1, settingsStore.targetOffsetY + 0.001)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!coordinator.connectionState.isConnected)
+            }
             
             // Rotated vertical slider
             GeometryReader { geometry in
                 RotatedVerticalSlider(
                     value: $settingsStore.targetOffsetY,
-                    in: -0.4...0.4,
+                    in: -0.1...0.1,
                     step: 0.001
                 )
                 .frame(width: geometry.size.height, height: 40)
@@ -521,23 +537,38 @@ struct XOffsetControlView: View {
                         .frame(width: 20)
                         .foregroundColor(.secondary)
                     
+                    Button("-") {
+                        settingsStore.targetOffsetX = max(-0.1, settingsStore.targetOffsetX - 0.001)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!coordinator.connectionState.isConnected)
+                    
                     Slider(
                         value: $settingsStore.targetOffsetX,
-                        in: -0.4...0.4,
+                        in: -0.1...0.1,
                         step: 0.001
                     )
                     .disabled(!coordinator.connectionState.isConnected)
                     
+                    Button("+") {
+                        settingsStore.targetOffsetX = min(0.1, settingsStore.targetOffsetX + 0.001)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!coordinator.connectionState.isConnected)
+                    
                     Text(String(format: "%.3f", settingsStore.targetOffsetX))
-                        .frame(width: 60)
+                        .frame(width: 80)
                         .font(.system(.body, design: .monospaced))
                 }
                 
                 Text("X: Move right if ball goes right")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
+                }
+            
+//                .frame(maxWidth: .infinity)
             
             // Buttons - horizontal layout
             HStack(spacing: 12) {

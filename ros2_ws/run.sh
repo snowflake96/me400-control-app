@@ -2,16 +2,10 @@
 
 export RCUTILS_CONSOLE_OUTPUT_FORMAT="[{severity}] [{name}]: {message}"
 
-sudo modprobe i2c_dev
-sudo modprobe i2c_bcm2835
-
-# Kill any process using port 3000 to prevent address already in use errors
-fuser -k 3000/tcp 2>/dev/null || true
-pkill -f gunicorn || true
 # ——————————————————————————————
 # 2) Give permissions to I2C
 # ——————————————————————————————
-# sudo chmod 666 /dev/i2c-1
+sudo chmod 666 /dev/i2c-1
 
 # ——————————————————————————————
 # 3) Source ROS2 and your workspace

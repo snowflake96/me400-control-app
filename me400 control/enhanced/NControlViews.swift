@@ -11,14 +11,34 @@ struct NESCControlView: View {
         GroupBox("ESC Control") {
             VStack(spacing: 16) {
                 HStack {
-                    Slider(value: $escValue, in: 0...1)
-                        .onChange(of: escValue) { _, newValue in
+                    Button("-") {
+                        escValue = max(0, escValue - 0.01)
+                        Task {
+                            try? await coordinator.sendESCCommand(escValue)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!coordinator.systemState.isRunning)
+                    
+                    Slider(value: $escValue, in: 0...1, step: 0.01)
+                        .onChange(of: escValue) { newValue in
                             Task {
                                 let roundedValue = round(newValue * 100) / 100
                                 try? await coordinator.sendESCCommand(roundedValue)
                             }
                         }
                         .disabled(!coordinator.systemState.isRunning)
+                    
+                    Button("+") {
+                        escValue = min(1, escValue + 0.01)
+                        Task {
+                            try? await coordinator.sendESCCommand(escValue)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!coordinator.systemState.isRunning)
                     
                     Text(String(format: "%.2f", escValue))
                         .frame(width: 50)
@@ -93,6 +113,11 @@ struct ManualControlsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @State private var pitchValue: Double = 0.0
     @State private var yawValue: Double = 0.0
+    @State private var delicateMode: Bool = false
+    
+    private var sliderRange: ClosedRange<Double> {
+        delicateMode ? -0.1...0.1 : -1...1
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -109,6 +134,20 @@ struct ManualControlsView: View {
             // Servo Controls
             GroupBox("Servo Control") {
                 VStack(spacing: 16) {
+                    // Delicate mode toggle
+                    Toggle("Delicate Mode", isOn: $delicateMode)
+                        .font(.caption)
+                        .padding(.bottom, 8)
+                        .onChange(of: delicateMode) { _, _ in
+                            // Reset values when switching modes to ensure they're within range
+                            if abs(pitchValue) > 0.1 {
+                                pitchValue = 0
+                            }
+                            if abs(yawValue) > 0.1 {
+                                yawValue = 0
+                            }
+                        }
+                    
                     // Pitch Control
                     VStack(alignment: .leading) {
                         Text("Pitch")
@@ -116,10 +155,10 @@ struct ManualControlsView: View {
                             .foregroundColor(.secondary)
                         
                         HStack {
-                            Text("-1")
+                            Text(delicateMode ? "-0.1" : "-1")
                                 .font(.caption2)
                             
-                            Slider(value: $pitchValue, in: -1...1, step: 0.01) { editing in
+                            Slider(value: $pitchValue, in: sliderRange, step: 0.01) { editing in
                                 if !editing {
                                     // Spring back to zero when released
                                     withAnimation(.spring()) {
@@ -130,7 +169,7 @@ struct ManualControlsView: View {
                                     }
                                 }
                             }
-                            .onChange(of: pitchValue) { _, newValue in
+                            .onChange(of: pitchValue) { newValue in
                                 Task {
                                     let roundedPitch = round(newValue * 100) / 100
                                     let roundedYaw = round(yawValue * 100) / 100
@@ -139,7 +178,7 @@ struct ManualControlsView: View {
                             }
                             .disabled(!coordinator.systemState.isRunning)
                             
-                            Text("1")
+                            Text(delicateMode ? "0.1" : "1")
                                 .font(.caption2)
                         }
                         
@@ -155,10 +194,10 @@ struct ManualControlsView: View {
                             .foregroundColor(.secondary)
                         
                         HStack {
-                            Text("-1")
+                            Text(delicateMode ? "-0.1" : "-1")
                                 .font(.caption2)
                             
-                            Slider(value: $yawValue, in: -1...1, step: 0.01) { editing in
+                            Slider(value: $yawValue, in: sliderRange, step: 0.01) { editing in
                                 if !editing {
                                     // Spring back to zero when released
                                     withAnimation(.spring()) {
@@ -169,7 +208,7 @@ struct ManualControlsView: View {
                                     }
                                 }
                             }
-                            .onChange(of: yawValue) { _, newValue in
+                            .onChange(of: yawValue) { newValue in
                                 Task {
                                     let roundedPitch = round(pitchValue * 100) / 100
                                     let roundedYaw = round(newValue * 100) / 100
@@ -178,7 +217,7 @@ struct ManualControlsView: View {
                             }
                             .disabled(!coordinator.systemState.isRunning)
                             
-                            Text("1")
+                            Text(delicateMode ? "0.1" : "1")
                                 .font(.caption2)
                         }
                         
@@ -200,6 +239,7 @@ struct ManualControlsView: View {
 struct PIDControlView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
+    @State private var hasInitialized: Bool = false
     
     var body: some View {
         // PID Parameters
@@ -212,31 +252,43 @@ struct PIDControlView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     NumericInputRow(
-                        label: "P Gain",
-                        value: $settingsStore.sharedPitchP,
+                        title: "P Gain",
+                        value: settingsStore.sharedPitchP,
+                        step: settingsStore.pitchPStepSize,
                         range: -1000...1000,
-                        step: settingsStore.pitchPStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedPitchP = newValue
+                        }
                     )
                     
                     NumericInputRow(
-                        label: "I Gain",
-                        value: $settingsStore.sharedPitchI,
+                        title: "I Gain",
+                        value: settingsStore.sharedPitchI,
+                        step: settingsStore.pitchIStepSize,
                         range: -1000...1000,
-                        step: settingsStore.pitchIStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedPitchI = newValue
+                        }
                     )
                     
                     NumericInputRow(
-                        label: "I Limit",
-                        value: $settingsStore.sharedPitchLimit,
+                        title: "I Limit",
+                        value: settingsStore.sharedPitchLimit,
+                        step: settingsStore.pitchIntegralLimitStepSize,
                         range: 0...1000,
-                        step: settingsStore.pitchIntegralLimitStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedPitchLimit = newValue
+                        }
                     )
                     
                     NumericInputRow(
-                        label: "I Thres",
-                        value: $settingsStore.sharedPitchThreshold,
+                        title: "I Thres",
+                        value: settingsStore.sharedPitchThreshold,
+                        step: settingsStore.pitchIntegralThresholdStepSize,
                         range: 0...1,
-                        step: settingsStore.pitchIntegralThresholdStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedPitchThreshold = newValue
+                        }
                     )
                     
                     HStack {
@@ -272,31 +324,43 @@ struct PIDControlView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     NumericInputRow(
-                        label: "P Gain",
-                        value: $settingsStore.sharedYawP,
+                        title: "P Gain",
+                        value: settingsStore.sharedYawP,
+                        step: settingsStore.yawPStepSize,
                         range: -1000...1000,
-                        step: settingsStore.yawPStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedYawP = newValue
+                        }
                     )
                     
                     NumericInputRow(
-                        label: "I Gain",
-                        value: $settingsStore.sharedYawI,
+                        title: "I Gain",
+                        value: settingsStore.sharedYawI,
+                        step: settingsStore.yawIStepSize,
                         range: -1000...1000,
-                        step: settingsStore.yawIStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedYawI = newValue
+                        }
                     )
                     
                     NumericInputRow(
-                        label: "I Limit",
-                        value: $settingsStore.sharedYawLimit,
+                        title: "I Limit",
+                        value: settingsStore.sharedYawLimit,
+                        step: settingsStore.yawIntegralLimitStepSize,
                         range: 0...1000,
-                        step: settingsStore.yawIntegralLimitStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedYawLimit = newValue
+                        }
                     )
                     
                     NumericInputRow(
-                        label: "I Thres",
-                        value: $settingsStore.sharedYawThreshold,
+                        title: "I Thres",
+                        value: settingsStore.sharedYawThreshold,
+                        step: settingsStore.yawIntegralThresholdStepSize,
                         range: 0...1,
-                        step: settingsStore.yawIntegralThresholdStepSize
+                        onChange: { newValue in
+                            settingsStore.sharedYawThreshold = newValue
+                        }
                     )
                     
                     HStack {
@@ -324,6 +388,35 @@ struct PIDControlView: View {
                 }
             }
         }
+        .onReceive(coordinator.$isSynchronized) { synchronized in
+            // Only initialize once when first synchronized
+            if synchronized && !hasInitialized {
+                // Small delay to ensure server values are populated
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    initializeFromPIDSettings()
+                    hasInitialized = true
+                }
+            }
+        }
+        .onReceive(coordinator.$connectionState) { state in
+            // Reset initialization flag when disconnected
+            if !state.isConnected {
+                hasInitialized = false
+            }
+        }
+    }
+    
+    private func initializeFromPIDSettings() {
+        // Initialize with actual values from PIDSettings after synchronization
+        settingsStore.sharedPitchP = coordinator.systemState.pitchP
+        settingsStore.sharedPitchI = coordinator.systemState.pitchI
+        settingsStore.sharedPitchLimit = coordinator.systemState.pitchIntegralLimit
+        settingsStore.sharedPitchThreshold = coordinator.systemState.pitchIntegralThreshold
+        
+        settingsStore.sharedYawP = coordinator.systemState.yawP
+        settingsStore.sharedYawI = coordinator.systemState.yawI
+        settingsStore.sharedYawLimit = coordinator.systemState.yawIntegralLimit
+        settingsStore.sharedYawThreshold = coordinator.systemState.yawIntegralThreshold
     }
 }
 
@@ -390,7 +483,7 @@ struct AutoAimControlsView: View {
             // Status
             StatusView()
             
-            // PID Controls
+            // PID Control
             PIDControlView()
             
             // ESC Control
@@ -413,9 +506,10 @@ struct AutonomousControlsView: View {
             // Status
             StatusView()
             
-            // PID Controls
+            // PID Control
             PIDControlView()
         }
+        .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
     }
 }
 
@@ -449,142 +543,6 @@ struct SystemSettingsView: View {
     var body: some View {
         GroupBox("System Settings") {
             VStack(spacing: 12) {
-                // Cutoff Frequency (Double)
-                HStack {
-                    Text("Cutoff Frequency")
-                        .frame(width: 140, alignment: .leading)
-                    TextField("Hz", text: $cutoffFrequency)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .focused($focusedField, equals: .cutoffFrequency)
-                        .placeholder(when: cutoffFrequency.isEmpty) {
-                            Text("--").foregroundColor(.gray)
-                        }
-                        .onChange(of: cutoffFrequency) { _, newValue in
-                            print("Cutoff frequency changed to: \(newValue)")
-                        }
-                        .onSubmit {
-                            print("Cutoff frequency set to: \(cutoffFrequency)")
-                        }
-                    Text("Hz")
-                        .foregroundColor(.secondary)
-                }
-                
-                // Max Consecutive NANs (UInt32)
-                HStack {
-                    Text("Max Consecutive NANs")
-                        .frame(width: 140, alignment: .leading)
-                    TextField("Count", text: $maxConsecutiveNans)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .focused($focusedField, equals: .maxConsecutiveNans)
-                        .placeholder(when: maxConsecutiveNans.isEmpty) {
-                            Text("--").foregroundColor(.gray)
-                        }
-                        .onChange(of: maxConsecutiveNans) { _, newValue in
-                            print("Max consecutive NANs changed to: \(newValue)")
-                        }
-                        .onSubmit {
-                            print("Max consecutive NANs set to: \(maxConsecutiveNans)")
-                        }
-                }
-                
-                // Launch Thresholds
-                HStack {
-                    Text("Launch Threshold")
-                        .frame(width: 140, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("ε:")
-                            TextField("Epsilon", text: $launchThresholdEps)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 60)
-                                .focused($focusedField, equals: .launchThresholdEps)
-                                .placeholder(when: launchThresholdEps.isEmpty) {
-                                    Text("--").foregroundColor(.gray)
-                                }
-                                .onChange(of: launchThresholdEps) { _, newValue in
-                                    print("Launch threshold epsilon changed to: \(newValue)")
-                                }
-                                .onSubmit {
-                                    print("Launch threshold epsilon set to: \(launchThresholdEps)")
-                                }
-                        }
-                        HStack {
-                            Text("N:")
-                            TextField("N", text: $launchThresholdN)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 60)
-                                .focused($focusedField, equals: .launchThresholdN)
-                                .placeholder(when: launchThresholdN.isEmpty) {
-                                    Text("--").foregroundColor(.gray)
-                                }
-                                .onChange(of: launchThresholdN) { _, newValue in
-                                    print("Launch threshold N changed to: \(newValue)")
-                                }
-                                .onSubmit {
-                                    print("Launch threshold N set to: \(launchThresholdN)")
-                                }
-                        }
-                    }
-                }
-                
-                // Stop Throttle (Double)
-                HStack {
-                    Text("Stop Throttle")
-                        .frame(width: 140, alignment: .leading)
-                    TextField("Value", text: $stopThrottle)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .focused($focusedField, equals: .stopThrottle)
-                        .placeholder(when: stopThrottle.isEmpty) {
-                            Text("--").foregroundColor(.gray)
-                        }
-                        .onChange(of: stopThrottle) { _, newValue in
-                            print("Stop throttle changed to: \(newValue)")
-                        }
-                        .onSubmit {
-                            print("Stop throttle set to: \(stopThrottle)")
-                        }
-                }
-                
-                // Default Speed (Double)
-                HStack {
-                    Text("Default Speed")
-                        .frame(width: 140, alignment: .leading)
-                    TextField("Value", text: $defaultSpeed)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .focused($focusedField, equals: .defaultSpeed)
-                        .placeholder(when: defaultSpeed.isEmpty) {
-                            Text("--").foregroundColor(.gray)
-                        }
-                        .onChange(of: defaultSpeed) { _, newValue in
-                            print("Default speed changed to: \(newValue)")
-                        }
-                        .onSubmit {
-                            print("Default speed set to: \(defaultSpeed)")
-                        }
-                }
-                
-                // Motor Offset (Double)
-                HStack {
-                    Text("Motor Offset")
-                        .frame(width: 140, alignment: .leading)
-                    TextField("Value", text: $motorOffset)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .focused($focusedField, equals: .motorOffset)
-                        .placeholder(when: motorOffset.isEmpty) {
-                            Text("--").foregroundColor(.gray)
-                        }
-                        .onChange(of: motorOffset) { _, newValue in
-                            print("Motor offset changed to: \(newValue)")
-                        }
-                        .onSubmit {
-                            print("Motor offset set to: \(motorOffset)")
-                        }
-                }
                 
                 // Send Settings Button
                 HStack {
@@ -605,6 +563,215 @@ struct SystemSettingsView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
+                
+                
+                
+                
+                // Cutoff Frequency (Double)
+                HStack {
+                    Text("Cutoff Frequency")
+                        .frame(width: 140, alignment: .leading)
+                    TextField("Hz", text: $cutoffFrequency)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                        .keyboardType(.numbersAndPunctuation)
+                        .focused($focusedField, equals: .cutoffFrequency)
+                        .placeholder(when: cutoffFrequency.isEmpty) {
+                            Text("--").foregroundColor(.gray)
+                        }
+                        .onChange(of: cutoffFrequency) { newValue in
+                            print("Cutoff frequency changed to: \(newValue)")
+                        }
+                        .onSubmit {
+                            print("Cutoff frequency set to: \(cutoffFrequency)")
+                        }
+                    Text("Hz")
+                        .foregroundColor(.secondary)
+                }
+                
+                // Max Consecutive NANs (UInt8)
+                HStack {
+                    Text("Max Consecutive NANs")
+                        .frame(width: 140, alignment: .leading)
+                    TextField("Count", text: $maxConsecutiveNans)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                        .keyboardType(.numbersAndPunctuation)
+                        .focused($focusedField, equals: .maxConsecutiveNans)
+                        .placeholder(when: maxConsecutiveNans.isEmpty) {
+                            Text("--").foregroundColor(.gray)
+                        }
+                        .onChange(of: maxConsecutiveNans) { newValue in
+                            print("Max consecutive NANs changed to: \(newValue)")
+                        }
+                        .onSubmit {
+                            print("Max consecutive NANs set to: \(maxConsecutiveNans)")
+                        }
+                }
+                
+                // Launch Thresholds
+                HStack {
+                    Text("Launch Threshold")
+                        .frame(width: 140, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("ε:")
+                            TextField("Epsilon", text: $launchThresholdEps)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 60)
+                                .keyboardType(.numbersAndPunctuation)
+                                .focused($focusedField, equals: .launchThresholdEps)
+                                .placeholder(when: launchThresholdEps.isEmpty) {
+                                    Text("--").foregroundColor(.gray)
+                                }
+                                .onChange(of: launchThresholdEps) { newValue in
+                                    print("Launch threshold epsilon changed to: \(newValue)")
+                                }
+                                .onSubmit {
+                                    print("Launch threshold epsilon set to: \(launchThresholdEps)")
+                                }
+                        }
+                        HStack {
+                            Text("N:")
+                            TextField("N", text: $launchThresholdN)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 60)
+                                .keyboardType(.numbersAndPunctuation)
+                                .focused($focusedField, equals: .launchThresholdN)
+                                .placeholder(when: launchThresholdN.isEmpty) {
+                                    Text("--").foregroundColor(.gray)
+                                }
+                                .onChange(of: launchThresholdN) { newValue in
+                                    print("Launch threshold N changed to: \(newValue)")
+                                }
+                                .onSubmit {
+                                    print("Launch threshold N set to: \(launchThresholdN)")
+                                }
+                        }
+                    }
+                }
+                
+                // Stop Throttle (Double)
+                HStack {
+                    Text("Stop Throttle")
+                        .frame(width: 140, alignment: .leading)
+                    HStack(spacing: 4) {
+                        Button("-") {
+                            if let value = Double(stopThrottle) {
+                                stopThrottle = String(format: "%.4f", max(0, value - 0.01))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        TextField("Value", text: $stopThrottle)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                            .keyboardType(.numbersAndPunctuation)
+                            .focused($focusedField, equals: .stopThrottle)
+                            .placeholder(when: stopThrottle.isEmpty) {
+                                Text("--").foregroundColor(.gray)
+                            }
+                        
+                        Button("+") {
+                            if let value = Double(stopThrottle) {
+                                stopThrottle = String(format: "%.4f", min(1, value + 0.01))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+//                    Text("(0.01)")
+//                        .foregroundColor(.secondary)
+                }
+                
+                // Default Speed (Double)
+                HStack {
+                    Text("Default Speed")
+                        .frame(width: 140, alignment: .leading)
+                    HStack(spacing: 4) {
+                        Button("-") {
+                            if let value = Double(defaultSpeed) {
+                                defaultSpeed = String(format: "%.4f", max(0, value - 0.01))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        TextField("Value", text: $defaultSpeed)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                            .keyboardType(.numbersAndPunctuation)
+                            .focused($focusedField, equals: .defaultSpeed)
+                            .placeholder(when: defaultSpeed.isEmpty) {
+                                Text("--").foregroundColor(.gray)
+                            }
+                        
+                        Button("+") {
+                            if let value = Double(defaultSpeed) {
+                                defaultSpeed = String(format: "%.4f", min(1, value + 0.01))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+//                    Text("(0.0001)")
+//                        .foregroundColor(.secondary)
+                }
+                
+                // Motor Offset (Double)
+                HStack {
+                    Text("Motor Offset")
+                        .frame(width: 140, alignment: .leading)
+                    HStack(spacing: 4) {
+                        Button("-") {
+                            if let value = Double(motorOffset) {
+                                motorOffset = String(format: "%.4f", max(-1, value - 0.001))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        TextField("Value", text: $motorOffset)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                            .keyboardType(.numbersAndPunctuation)
+                            .focused($focusedField, equals: .motorOffset)
+                            .placeholder(when: motorOffset.isEmpty) {
+                                Text("--").foregroundColor(.gray)
+                            }
+                        
+                        Button("+") {
+                            if let value = Double(motorOffset) {
+                                motorOffset = String(format: "%.4f", min(1, value + 0.001))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+//                    Text("(0.001)")
+//                        .foregroundColor(.secondary)
+                }
+                
+//                // Send Settings Button
+//                HStack {
+//                    Button("Send Settings") {
+//                        sendAllSettings()
+//                    }
+//                    .buttonStyle(.borderedProminent)
+//                    .disabled(isSending || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
+//                    
+//                    if isSending {
+//                        ProgressView()
+//                            .scaleEffect(0.8)
+//                    } else if let lastSend = lastSendTime, Date().timeIntervalSince(lastSend) < 2 {
+//                        Image(systemName: "checkmark.circle.fill")
+//                            .foregroundColor(.green)
+//                            .transition(.scale.combined(with: .opacity))
+//                    }
+//                }
+//                .frame(maxWidth: .infinity)
+//                .padding(.top, 8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -665,9 +832,9 @@ struct SystemSettingsView: View {
         maxConsecutiveNans = String(coordinator.systemState.maxConsecutiveNans)
         launchThresholdEps = String(format: "%.3f", coordinator.systemState.launchThresholdEps)
         launchThresholdN = String(coordinator.systemState.launchThresholdN)
-        stopThrottle = String(format: "%.1f", coordinator.systemState.stopThrottle)
-        defaultSpeed = String(format: "%.1f", coordinator.systemState.defaultSpeed)
-        motorOffset = String(format: "%.1f", coordinator.systemState.motorOffset)
+        stopThrottle = String(format: "%.4f", coordinator.systemState.stopThrottle)
+        defaultSpeed = String(format: "%.4f", coordinator.systemState.defaultSpeed)
+        motorOffset = String(format: "%.4f", coordinator.systemState.motorOffset)
     }
     
     private func sendAllSettings() {
@@ -711,7 +878,7 @@ struct SystemSettingsView: View {
             }
             
             // Send Max Consecutive NANs
-            if let maxNans = UInt32(maxConsecutiveNans) {
+            if let maxNans = UInt8(maxConsecutiveNans) {
                 do {
                     print("Sending max consecutive NANs: \(maxNans)")
                     try await coordinator.setMaxConsecutiveNans(maxNans)
@@ -786,35 +953,72 @@ struct SystemSettingsView: View {
 
 // MARK: - Helper Views
 struct NumericInputRow: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
+    let title: String
+    let value: Double
     let step: Double
+    let range: ClosedRange<Double>
+    let onChange: (Double) -> Void
+    @State private var textValue: String
+    @FocusState private var isFocused: Bool
+    
+    init(title: String, value: Double, step: Double, range: ClosedRange<Double>, onChange: @escaping (Double) -> Void) {
+        self.title = title
+        self.value = value
+        self.step = step
+        self.range = range
+        self.onChange = onChange
+        self._textValue = State(initialValue: String(format: "%.4f", value))
+    }
     
     var body: some View {
         HStack {
-            Text(label)
-                .frame(width: 60, alignment: .leading)
+            Text(title)
+                .frame(width: 100, alignment: .leading)
+            
+            TextField("", text: $textValue)
+                .textFieldStyle(.roundedBorder)
+                .keyboardType(.numbersAndPunctuation)
+                .multilineTextAlignment(.center)
+                .font(.system(.body, design: .monospaced))
+                .frame(width: 90)
+                .focused($isFocused)
+                .onChange(of: textValue) { newValue in
+                    if let newDouble = Double(newValue) {
+                        onChange(newDouble)
+                    }
+                }
+                .onSubmit {
+                    if let newDouble = Double(textValue) {
+                        let clampedValue = min(max(newDouble, range.lowerBound), range.upperBound)
+                        textValue = String(format: "%.4f", clampedValue)
+                        onChange(clampedValue)
+                    } else {
+                        textValue = String(format: "%.4f", value)
+                    }
+                }
+                .onChange(of: value) { newValue in
+                    if !isFocused {
+                        textValue = String(format: "%.4f", newValue)
+                    }
+                }
             
             HStack(spacing: 4) {
                 Button("-") {
-                    value = max(value - step, range.lowerBound)
+                    let newValue = max(value - step, range.lowerBound)
+                    textValue = String(format: "%.4f", newValue)
+                    onChange(newValue)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 
-                Text(String(format: "%.3f", value))
-                    .frame(width: 80)
-                    .font(.system(.body, design: .monospaced))
-                
                 Button("+") {
-                    value = min(value + step, range.upperBound)
+                    let newValue = min(value + step, range.upperBound)
+                    textValue = String(format: "%.4f", newValue)
+                    onChange(newValue)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
-            
-            Spacer()
         }
     }
 }

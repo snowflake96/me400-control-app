@@ -33,7 +33,7 @@ private:
   // Handler function to process received data packets from client
   void server_handler(const DataPacket& packet, int client_fd);
   // Helper function to handle query from client
-  std::string handle_client_query(int client_fd);
+  void handle_client_query(int client_fd);
   // Function to initialize parameters from the yaml file
   void init_parameters_from_yaml();
   // Callback invoked upon receiving target values from the "target_topic" (in autonoumous mode).
@@ -74,7 +74,7 @@ private:
 
   struct Target{
     std::atomic<double> x, y;
-  } target_{};
+  } target_{0.0, 0.0};
 
   struct LaunchThreshold{
     std::atomic<double> EPS;
@@ -87,16 +87,17 @@ private:
   } tilt_{};
 
   bool found_offset_ = false;
-  uint32_t launch_counter_{0};
+  uint8_t launch_counter_{0};
+  uint8_t nan_counter_{0};
   double current_speed_{0.0};
   double stop_throttle_{0.0};
   double motor_offset_{0.0};
 
-  inline static double push_ = 170.0;
-  inline static double retract_ = 55.0;
+  inline static double push_;
+  inline static double retract_;
   inline static bool USE_INTERPOLATION;
-  inline static uint32_t max_consecutive_nans_;
-  inline static double DEFAULT_SPEED_ = 0.2; // Default ESC value (for autonomous mode)
+  inline static double DEFAULT_SPEED_;
+  inline static uint8_t max_consecutive_nans_;
   
   // Publishers
   rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr servo_command_pub_;

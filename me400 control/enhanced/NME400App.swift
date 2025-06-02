@@ -79,9 +79,9 @@ final class SettingsStore: ObservableObject {
             return NetworkConfiguration(
                 host: serverHost,
                 port: 12345,
-                connectionTimeout: 10.0,
-                reconnectDelay: 2.0,
-                maxReconnectAttempts: 5,
+                connectionTimeout: 1.0,
+                reconnectDelay: 0.5,
+                maxReconnectAttempts: 20,
                 keepaliveInterval: 5
             )
         }
@@ -89,9 +89,9 @@ final class SettingsStore: ObservableObject {
         return NetworkConfiguration(
             host: serverHost,
             port: port,
-            connectionTimeout: 10.0,
-            reconnectDelay: 2.0,
-            maxReconnectAttempts: 5,
+            connectionTimeout: 1.0,
+            reconnectDelay: 0.5,
+            maxReconnectAttempts: 20,
             keepaliveInterval: 5
         )
     }

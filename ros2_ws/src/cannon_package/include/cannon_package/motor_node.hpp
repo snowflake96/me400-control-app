@@ -23,6 +23,13 @@ private:
   constexpr static uint8_t CH_ESC_R = 5;
   constexpr static uint8_t CH_TRIGGER = 3;
 
+  // Pitch
+  inline static float pitch_cw_center_us; // max
+  inline static float pitch_ccw_center_us; // min
+  // Yaw
+  inline static float yaw_cw_center_us; // max
+  inline static float yaw_ccw_center_us; // min
+
   inline static double motor_offset_ = 0.0; // L/R motor offset
   double last_throttle_ = 0.0;
 

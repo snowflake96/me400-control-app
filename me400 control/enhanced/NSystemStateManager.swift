@@ -14,7 +14,9 @@ struct SystemState {
     // Server's reported state (for display in ServerStateView)
     var serverMode: DrivingMode? = nil
     var serverIsRunning: Bool? = nil
-    var serverLaunchCounter: UInt32? = nil
+    var serverFoundOffset: Bool? = nil
+    var serverUseInterpolation: Bool? = nil
+    var serverMaxNans: UInt8? = nil
     var serverLaunchThresholdN: UInt8? = nil
     var serverLaunchThresholdEps: Double? = nil
     var serverTargetX: Double? = nil
@@ -24,9 +26,19 @@ struct SystemState {
     var serverDefaultSpeed: Double? = nil
     var serverCutoffFrequency: Double? = nil
     
+    // PID Settings from server
+    var serverPitchP: Double? = nil
+    var serverPitchI: Double? = nil
+    var serverPitchILimit: Double? = nil
+    var serverPitchIThreshold: Double? = nil
+    var serverYawP: Double? = nil
+    var serverYawI: Double? = nil
+    var serverYawILimit: Double? = nil
+    var serverYawIThreshold: Double? = nil
+    
     // Parameters
     var launchCounter: UInt32 = 0
-    var maxConsecutiveNans: UInt32 = 20  // Client-managed, not from server CurrentState
+    var maxConsecutiveNans: UInt8 = 20  // Client-managed, not from server CurrentState
     var launchThresholdN: UInt8 = 10      // From server
     var launchThresholdEps: Double = 0.005 // From server
     var targetX: Double = 0.0
@@ -40,9 +52,11 @@ struct SystemState {
     var pitchP: Double = 10.0
     var pitchI: Double = 0.0
     var pitchIntegralLimit: Double = 1.0
+    var pitchIntegralThreshold: Double = 0.025
     var yawP: Double = 10.0
     var yawI: Double = 0.0
     var yawIntegralLimit: Double = 1.0
+    var yawIntegralThreshold: Double = 0.025
     
     // Sensor Data
     var tiltRoll: Double = 0.0
@@ -92,6 +106,7 @@ protocol SystemStateManagerProtocol: AnyObject {
     func processPacket(_ packet: ReceivedPacket)
     func updateConnectionState(_ isConnected: Bool, error: String?)
     func reset()
+    func resetSynchronization()
     func setSynchronizationCallback(_ callback: @escaping () -> Void)
     func isSynchronized() -> Bool
     func updateDrivingMode(_ mode: DrivingMode)
@@ -147,15 +162,22 @@ final class SystemStateManager: SystemStateManagerProtocol {
         queue.async(flags: .barrier) { [weak self] in
             guard let self = self else { return }
             
+            print("SystemStateManager processing packet: \(packet.type.description)")
+            
             // If not synchronized, only process CurrentState packets
             if !self.hasSynchronized && packet.type != .currentState {
+                print("Not synchronized yet, ignoring packet: \(packet.type.description)")
                 // Ignore other packets until synchronized
                 return
             }
             
             switch packet.type {
             case .currentState:
+                print("Processing CurrentState packet")
                 self.processCurrentState(packet.payload)
+                
+            case .pidSettings:
+                self.processPIDSettings(packet.payload)
                 
             case .bboxPos:
                 self.processBoundingBox(packet.payload, timestamp: packet.timestamp)
@@ -205,10 +227,22 @@ final class SystemStateManager: SystemStateManagerProtocol {
         stateSubject.send(SystemState())
     }
     
+    func resetSynchronization() {
+        queue.async(flags: .barrier) {
+            print("SystemStateManager: Resetting synchronization state")
+            self.hasSynchronized = false
+            self.isProcessingSyncPacket = false
+        }
+    }
+    
     // MARK: - Private Processing Methods
     
     private func processCurrentState(_ payload: Data) {
-        guard payload.count >= 63 else { return }  // Updated size (1+1+4+1+8*6 = 63)
+        print("CurrentState packet size: \(payload.count) bytes")
+        guard payload.count >= 62 else { 
+            print("ERROR: CurrentState packet too small, expected >= 62 bytes")
+            return 
+        }  // Updated size (1+1+1+1+1+1+8*7 = 62)
         
         // Notify that CurrentState was received (for latency tracking)
         if let callback = onCurrentStateReceived {
@@ -219,20 +253,23 @@ final class SystemStateManager: SystemStateManagerProtocol {
         
         let mode = PacketDecoder.readUInt8(at: 0, from: payload)
         let systemState = PacketDecoder.readUInt8(at: 1, from: payload)
-        let launchCounter = PacketDecoder.readUInt32(at: 2, from: payload)
-        let n = PacketDecoder.readUInt8(at: 6, from: payload)
-        let eps = PacketDecoder.readDouble(at: 7, from: payload)
-        let targetX = PacketDecoder.readDouble(at: 15, from: payload)
-        let targetY = PacketDecoder.readDouble(at: 23, from: payload)
-        let stopThrottle = PacketDecoder.readDouble(at: 31, from: payload)
-        let motorOffset = PacketDecoder.readDouble(at: 39, from: payload)
-        let defaultSpeed = PacketDecoder.readDouble(at: 47, from: payload)
-        let cutoffFreq = PacketDecoder.readDouble(at: 55, from: payload)
+        let foundOffset = PacketDecoder.readUInt8(at: 2, from: payload) != 0
+        let useInterpolation = PacketDecoder.readUInt8(at: 3, from: payload) != 0
+        let maxNans = PacketDecoder.readUInt8(at: 4, from: payload)
+        let n = PacketDecoder.readUInt8(at: 5, from: payload)
+        let eps = PacketDecoder.readDouble(at: 6, from: payload)
+        let targetX = PacketDecoder.readDouble(at: 14, from: payload)
+        let targetY = PacketDecoder.readDouble(at: 22, from: payload)
+        let stopThrottle = PacketDecoder.readDouble(at: 30, from: payload)
+        let motorOffset = PacketDecoder.readDouble(at: 38, from: payload)
+        let defaultSpeed = PacketDecoder.readDouble(at: 46, from: payload)
+        let cutoffFreq = PacketDecoder.readDouble(at: 54, from: payload)
         
         // Check if this is initial sync
         let isInitialSync = !hasSynchronized && !isProcessingSyncPacket
         
         if isInitialSync {
+            print("SystemStateManager: Initial sync detected")
             // Prevent processing multiple sync packets
             isProcessingSyncPacket = true
             
@@ -245,7 +282,7 @@ final class SystemStateManager: SystemStateManagerProtocol {
                 }
                 
                 // Update all parameters from server
-                state.launchCounter = launchCounter
+                state.launchCounter = 0 // Reset launch counter on sync
                 state.launchThresholdN = n
                 state.launchThresholdEps = eps
                 state.targetX = targetX
@@ -256,7 +293,9 @@ final class SystemStateManager: SystemStateManagerProtocol {
                 state.cutoffFrequency = cutoffFreq
                 
                 // ALSO store server's current state for ServerStateView display
-                state.serverLaunchCounter = launchCounter
+                state.serverFoundOffset = foundOffset
+                state.serverUseInterpolation = useInterpolation
+                state.serverMaxNans = maxNans
                 state.serverLaunchThresholdN = n
                 state.serverLaunchThresholdEps = eps
                 state.serverTargetX = targetX
@@ -275,14 +314,21 @@ final class SystemStateManager: SystemStateManagerProtocol {
             
             // Mark as synchronized and trigger callback
             hasSynchronized = true
+            isProcessingSyncPacket = false  // Reset the flag after sync is complete
+            
+            print("SystemStateManager: Marked as synchronized, calling callback")
             
             // Trigger synchronization callback on main thread
             if let callback = onSynchronized {
+                print("SystemStateManager: Calling synchronization callback")
                 DispatchQueue.main.async {
                     callback()
                 }
+            } else {
+                print("SystemStateManager: WARNING - No synchronization callback set!")
             }
         } else if hasSynchronized {
+            print("SystemStateManager: Already synchronized, updating state")
             // After initial sync: update both server state AND main state
             updateState { state in
                 // Update mode if changed by server
@@ -298,7 +344,6 @@ final class SystemStateManager: SystemStateManagerProtocol {
                 }
                 
                 // Update all parameters from server
-                state.launchCounter = launchCounter
                 state.launchThresholdN = n
                 state.launchThresholdEps = eps
                 state.targetX = targetX
@@ -309,7 +354,9 @@ final class SystemStateManager: SystemStateManagerProtocol {
                 state.cutoffFrequency = cutoffFreq
                 
                 // Also store server's current state for ServerStateView display
-                state.serverLaunchCounter = launchCounter
+                state.serverFoundOffset = foundOffset
+                state.serverUseInterpolation = useInterpolation
+                state.serverMaxNans = maxNans
                 state.serverLaunchThresholdN = n
                 state.serverLaunchThresholdEps = eps
                 state.serverTargetX = targetX
@@ -319,6 +366,44 @@ final class SystemStateManager: SystemStateManagerProtocol {
                 state.serverDefaultSpeed = defaultSpeed
                 state.serverCutoffFrequency = cutoffFreq
             }
+        }
+    }
+    
+    private func processPIDSettings(_ payload: Data) {
+        guard payload.count >= 64 else { return }
+        
+        // Pitch parameters
+        let pitchP = PacketDecoder.readDouble(at: 0, from: payload)
+        let pitchI = PacketDecoder.readDouble(at: 8, from: payload)
+        let pitchILimit = PacketDecoder.readDouble(at: 16, from: payload)
+        let pitchIThreshold = PacketDecoder.readDouble(at: 24, from: payload)
+        
+        // Yaw parameters
+        let yawP = PacketDecoder.readDouble(at: 32, from: payload)
+        let yawI = PacketDecoder.readDouble(at: 40, from: payload)
+        let yawILimit = PacketDecoder.readDouble(at: 48, from: payload)
+        let yawIThreshold = PacketDecoder.readDouble(at: 56, from: payload)
+        
+        updateState { state in
+            // Update local PID parameters
+            state.pitchP = pitchP
+            state.pitchI = pitchI
+            state.pitchIntegralLimit = pitchILimit
+            state.pitchIntegralThreshold = pitchIThreshold
+            state.yawP = yawP
+            state.yawI = yawI
+            state.yawIntegralLimit = yawILimit
+            state.yawIntegralThreshold = yawIThreshold
+            
+            // Also store server's PID settings for display
+            state.serverPitchP = pitchP
+            state.serverPitchI = pitchI
+            state.serverPitchILimit = pitchILimit
+            state.serverPitchIThreshold = pitchIThreshold
+            state.serverYawP = yawP
+            state.serverYawI = yawI
+            state.serverYawILimit = yawILimit
+            state.serverYawIThreshold = yawIThreshold
         }
     }
     

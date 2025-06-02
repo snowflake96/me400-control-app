@@ -29,17 +29,20 @@ struct DataPacket {
         MotorOffset,
         FilteredBbox,
         SetCutoffFrequency,
-        LaunchCounter, 
+        LaunchCounter, // HERE
         SetStopThrottle,
         SetMaxConsecutiveNans,
         SetDefaultSpeed,
-        CurrentState
+        CurrentState,   // HERE
+        SetPitchIntegralThreshold,
+        SetYawIntegralThreshold,
+        PIDSettings
     } type;
 
     union Data {
         char text[64];
         double double_array[8];
-        uint32_t uint32;
+        uint8_t uint8;
         bool boolean;
         double w;
         struct Vec3 {
@@ -52,9 +55,11 @@ struct DataPacket {
             uint8_t N;
         } threshold;
         struct CurrentState{
-            Type mode; // Auto, autoaim, manual
-            Type motor_state; // either running or stopped
-            uint32_t launch_counter;
+            Type mode; // Type::SetAutonomous / Type::SetAutoaim / Type::SetManual
+            Type motor_state; // Type::Start / Type::Stop
+            bool found_offset; // ADDED
+            bool use_interpolation; // ADDED
+            uint8_t max_nans; // REPLACED
             uint8_t N;
             double EPS;
             double target_x;
@@ -64,6 +69,14 @@ struct DataPacket {
             double default_speed;
             double cutoff_freq;
         } state;
+        struct PIDSettings{
+            struct Parameters{
+                double P;
+                double I;
+                double I_limit;
+                double I_threshold;
+            } pitch, yaw;
+        } pid_settings;
     } data;
 };
 #pragma pack(pop)

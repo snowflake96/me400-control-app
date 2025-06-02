@@ -13,9 +13,6 @@ ImuNode::ImuNode() : Node("imu_node"), sensor_("/dev/i2c-1", 0x68), alpha_(0.98)
   // Create a publisher on the "sensor_data" topic with a queue size of 10.
   publisher_ = this->create_publisher<geometry_msgs::msg::Vector3>("imu_topic", 10);
 
-  // Create a timer to call publish_sensor_data() every 10 milliseconds (100Hz)
-  timer_ = this->create_wall_timer(10ms, std::bind(&ImuNode::publish_sensor_data, this));
-
   /// Initialize the sensor ///
   if (!sensor_.initialize()) {
       RCLCPP_ERROR(this->get_logger(), "Failed to initialize the IMU (MPU6050).");
@@ -41,15 +38,31 @@ ImuNode::ImuNode() : Node("imu_node"), sensor_("/dev/i2c-1", 0x68), alpha_(0.98)
       RCLCPP_ERROR(this->get_logger(), "Failed to set DLFP");
   }
 
+  // Get all servo params
+  this->declare_parameter("gyro_offsets.x", 0.0);
+  this->declare_parameter("gyro_offsets.y", 0.0);
+  this->declare_parameter("gyro_offsets.z", 0.0);
+  this->declare_parameter("log_gyro", false);
+
+  gyro_offsets.x = this->get_parameter("gyro_offsets.x").as_double();
+  gyro_offsets.y = this->get_parameter("gyro_offsets.y").as_double();
+  gyro_offsets.z = this->get_parameter("gyro_offsets.z").as_double();
+  log_gyro = this->get_parameter("log_gyro").as_bool();
+  
   RCLCPP_INFO(this->get_logger(), "IMU initialized Successfully. Starting to read sensor data...");
+
+  // Create a timer to call publish_sensor_data() every 10 milliseconds (100Hz)
+  timer_ = this->create_wall_timer(10ms, std::bind(&ImuNode::publish_sensor_data, this));
 }
 
 void ImuNode::publish_sensor_data()
 {
-  static int counter = 0;
+  static size_t counter = 0;
+
   Tilt tilt = read_sensor();
-  // Publish the pitch every 10 readings (10Hz)
-  if(++counter==10){
+  
+  // Publish at 50Hz
+  if(++counter == 2){
     counter = 0;
     auto msg = geometry_msgs::msg::Vector3();
     msg.x = tilt.roll;
@@ -80,10 +93,14 @@ ImuNode::Tilt ImuNode::read_sensor()
   double accel_y = static_cast<double>(accel.y) * accel_scale;
   double accel_z = static_cast<double>(accel.z) * accel_scale * -1;
 
-  // Convert gyro y-axis to degrees per second  
+  // Convert gyro to degrees per second  
   double gyro_scale = sensor_.getGyroConversionFactor();
-  double gyro_x_deg = static_cast<double>(gyro.x) * gyro_scale;
-  double gyro_y_deg = static_cast<double>(gyro.y) * gyro_scale;
+  double gyro_x_deg = static_cast<double>(gyro.x) * gyro_scale - gyro_offsets.x;
+  double gyro_y_deg = static_cast<double>(gyro.y) * gyro_scale - gyro_offsets.y;
+  
+  if(log_gyro){
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 200, "Gyro values (deg/s) - X: %.3f, Y: %.3f", gyro_x_deg, gyro_y_deg);
+  }
 
   // Calculate roll from accelerometer
   double accel_roll = atan2(-accel_y, std::hypot(accel_x, accel_z));

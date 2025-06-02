@@ -48,6 +48,7 @@ enum PacketType: UInt8, CaseIterable {
     case currentState = 25
     case setPitchIntegralThreshold = 26
     case setYawIntegralThreshold = 27
+    case pidSettings = 28
     
     var description: String {
         switch self {
@@ -79,6 +80,7 @@ enum PacketType: UInt8, CaseIterable {
         case .currentState: return "Current State"
         case .setPitchIntegralThreshold: return "Set Pitch Integral Threshold"
         case .setYawIntegralThreshold: return "Set Yaw Integral Threshold"
+        case .pidSettings: return "PID Settings"
         }
     }
 }
@@ -187,6 +189,16 @@ struct UInt32Payload: PacketPayload {
     }
 }
 
+struct UInt8Payload: PacketPayload {
+    let value: UInt8
+    
+    func encode() -> Data {
+        var data = Data(count: ProtocolConstants.payloadSize)
+        data[0] = value
+        return data
+    }
+}
+
 struct TextPayload: PacketPayload {
     let text: String
     
@@ -216,8 +228,11 @@ struct ThresholdPayload: PacketPayload {
 struct CurrentStatePayload: PacketPayload {
     let mode: DrivingMode
     let state: RunningState
-    let launchCounter: UInt32
-    let maxConsecutiveNans: UInt32
+    let foundOffset: Bool
+    let useInterpolation: Bool
+    let maxNans: UInt8
+    let n: UInt8
+    let eps: Double
     let targetX: Double
     let targetY: Double
     let stopThrottle: Double
@@ -230,9 +245,12 @@ struct CurrentStatePayload: PacketPayload {
         
         data[0] = mode.rawValue
         data[1] = state.rawValue
+        data[2] = foundOffset ? 1 : 0
+        data[3] = useInterpolation ? 1 : 0
+        data[4] = maxNans
+        data[5] = n
         
-        var lcLE = launchCounter.littleEndian
-        var mcnLE = maxConsecutiveNans.littleEndian
+        var epsLE = eps.bitPattern.littleEndian
         var txLE = targetX.bitPattern.littleEndian
         var tyLE = targetY.bitPattern.littleEndian
         var stLE = stopThrottle.bitPattern.littleEndian
@@ -240,14 +258,53 @@ struct CurrentStatePayload: PacketPayload {
         var dsLE = defaultSpeed.bitPattern.littleEndian
         var cfLE = cutoffFreq.bitPattern.littleEndian
         
-        data.replaceSubrange(2..<6, with: Data(bytes: &lcLE, count: 4))
-        data.replaceSubrange(6..<10, with: Data(bytes: &mcnLE, count: 4))
-        data.replaceSubrange(10..<18, with: Data(bytes: &txLE, count: 8))
-        data.replaceSubrange(18..<26, with: Data(bytes: &tyLE, count: 8))
-        data.replaceSubrange(26..<34, with: Data(bytes: &stLE, count: 8))
-        data.replaceSubrange(34..<42, with: Data(bytes: &moLE, count: 8))
-        data.replaceSubrange(42..<50, with: Data(bytes: &dsLE, count: 8))
-        data.replaceSubrange(50..<58, with: Data(bytes: &cfLE, count: 8))
+        data.replaceSubrange(6..<14, with: Data(bytes: &epsLE, count: 8))
+        data.replaceSubrange(14..<22, with: Data(bytes: &txLE, count: 8))
+        data.replaceSubrange(22..<30, with: Data(bytes: &tyLE, count: 8))
+        data.replaceSubrange(30..<38, with: Data(bytes: &stLE, count: 8))
+        data.replaceSubrange(38..<46, with: Data(bytes: &moLE, count: 8))
+        data.replaceSubrange(46..<54, with: Data(bytes: &dsLE, count: 8))
+        data.replaceSubrange(54..<62, with: Data(bytes: &cfLE, count: 8))
+        
+        return data
+    }
+}
+
+struct PIDSettingsPayload: PacketPayload {
+    struct PIDParameters {
+        let p: Double
+        let i: Double
+        let iLimit: Double
+        let iThreshold: Double
+    }
+    
+    let pitch: PIDParameters
+    let yaw: PIDParameters
+    
+    func encode() -> Data {
+        var data = Data(count: ProtocolConstants.payloadSize)
+        
+        // Pitch parameters (32 bytes)
+        var pitchP = pitch.p.bitPattern.littleEndian
+        var pitchI = pitch.i.bitPattern.littleEndian
+        var pitchILimit = pitch.iLimit.bitPattern.littleEndian
+        var pitchIThreshold = pitch.iThreshold.bitPattern.littleEndian
+        
+        data.replaceSubrange(0..<8, with: Data(bytes: &pitchP, count: 8))
+        data.replaceSubrange(8..<16, with: Data(bytes: &pitchI, count: 8))
+        data.replaceSubrange(16..<24, with: Data(bytes: &pitchILimit, count: 8))
+        data.replaceSubrange(24..<32, with: Data(bytes: &pitchIThreshold, count: 8))
+        
+        // Yaw parameters (32 bytes)
+        var yawP = yaw.p.bitPattern.littleEndian
+        var yawI = yaw.i.bitPattern.littleEndian
+        var yawILimit = yaw.iLimit.bitPattern.littleEndian
+        var yawIThreshold = yaw.iThreshold.bitPattern.littleEndian
+        
+        data.replaceSubrange(32..<40, with: Data(bytes: &yawP, count: 8))
+        data.replaceSubrange(40..<48, with: Data(bytes: &yawI, count: 8))
+        data.replaceSubrange(48..<56, with: Data(bytes: &yawILimit, count: 8))
+        data.replaceSubrange(56..<64, with: Data(bytes: &yawIThreshold, count: 8))
         
         return data
     }
@@ -344,8 +401,8 @@ enum PacketFactory {
         Packet(type: .setStopThrottle, payload: DoublePayload(value: value))
     }
     
-    static func setMaxConsecutiveNans(_ value: UInt32) -> Packet {
-        Packet(type: .setMaxConsecutiveNans, payload: UInt32Payload(value: value))
+    static func setMaxConsecutiveNans(_ value: UInt8) -> Packet {
+        Packet(type: .setMaxConsecutiveNans, payload: UInt8Payload(value: value))
     }
     
     static func setDefaultSpeed(_ value: Double) -> Packet {

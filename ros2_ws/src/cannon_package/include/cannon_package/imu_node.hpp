@@ -25,7 +25,13 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
   MPU6050 sensor_;
-  
+
+  struct GyroOffset{
+    double x,y,z;
+  } gyro_offsets{};
+
+  bool log_gyro = false;
+
   // Complementary filter variables
   double prev_roll_{};   // Previous roll angle in degrees
   double prev_pitch_ = 60.0;  // Previous pitch angle in degrees

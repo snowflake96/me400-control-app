@@ -19,6 +19,9 @@ enum NetworkError: LocalizedError {
         case .connectionTimeout:
             return "Connection timed out"
         case .connectionFailed(let reason):
+            if reason.contains("Connection refused") {
+                return "Server not available"
+            }
             return "Connection failed: \(reason)"
         case .disconnected:
             return "Disconnected from server"
@@ -57,9 +60,9 @@ struct NetworkConfiguration {
     static let `default` = NetworkConfiguration(
         host: "100.102.243.9",
         port: 12345,
-        connectionTimeout: 10.0,
-        reconnectDelay: 2.0,
-        maxReconnectAttempts: 5,
+        connectionTimeout: 1.0,
+        reconnectDelay: 0.5,
+        maxReconnectAttempts: 20,
         keepaliveInterval: 5
     )
 }
@@ -102,6 +105,9 @@ final class NetworkManager: NetworkManagerProtocol {
     // Configuration
     private var configuration: NetworkConfiguration?
     
+    // Connection state tracking
+    private var isConnecting = false
+    
     // Reconnection
     private var reconnectTimer: Timer?
     private var reconnectAttempts = 0
@@ -112,15 +118,38 @@ final class NetworkManager: NetworkManagerProtocol {
     // MARK: - Connection Management
     
     func connect(configuration: NetworkConfiguration) {
-        self.configuration = configuration
-        reconnectAttempts = 0
-        
+        // Prevent multiple simultaneous connection attempts
         queue.async { [weak self] in
-            self?.establishConnection(configuration)
+            guard let self = self else { return }
+            
+            // If already connecting or connected, ignore
+            if self.isConnecting || self.connectionStateSubject.value.isConnected {
+                print("NetworkManager: Already connecting or connected, ignoring connect request")
+                return
+            }
+            
+            // Cancel any existing connection
+            if let existingConnection = self.connection {
+                print("NetworkManager: Canceling existing connection")
+                existingConnection.cancel()
+                self.connection = nil
+            }
+            
+            self.configuration = configuration
+            self.reconnectAttempts = 0
+            self.isConnecting = true
+            
+            self.establishConnection(configuration)
         }
     }
     
     private func establishConnection(_ config: NetworkConfiguration) {
+        // Cancel any existing connection first
+        if let existingConnection = connection {
+            existingConnection.cancel()
+            connection = nil
+        }
+        
         // Update state
         DispatchQueue.main.async {
             self.connectionStateSubject.send(.connecting)
@@ -128,7 +157,8 @@ final class NetworkManager: NetworkManagerProtocol {
         
         // Configure TCP parameters
         let params = NWParameters.tcp
-        params.requiredInterfaceType = .other
+        // Remove interface requirement to allow any available interface
+        // params.requiredInterfaceType = .other
         
         // Configure TCP options for keepalive
         if let tcpOptions = params.defaultProtocolStack.internetProtocol as? NWProtocolTCP.Options {
@@ -163,9 +193,16 @@ final class NetworkManager: NetworkManagerProtocol {
         connectionTimeoutTimer = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             if !self.connectionStateSubject.value.isConnected {
-                self.connection?.cancel()
-                DispatchQueue.main.async {
-                    self.connectionStateSubject.send(.failed(.connectionTimeout))
+                self.queue.async {
+                    self.isConnecting = false
+                    self.connection?.cancel()
+                    
+                    DispatchQueue.main.async {
+                        self.connectionStateSubject.send(.failed(.connectionTimeout))
+                    }
+                    
+                    // Attempt reconnection after timeout
+                    self.attemptReconnection()
                 }
             }
         }
@@ -175,26 +212,51 @@ final class NetworkManager: NetworkManagerProtocol {
         // Cancel timeout timer
         connectionTimeoutTimer?.invalidate()
         
+        print("NetworkManager: Connection state changed to: \(state)")
+        
         switch state {
         case .ready:
             reconnectAttempts = 0
+            isConnecting = false
             DispatchQueue.main.async {
                 self.connectionStateSubject.send(.connected)
             }
             startReceiving()
             
         case .failed(let error):
+            print("NetworkManager: Connection failed with error: \(error)")
+            isConnecting = false
             let networkError = NetworkError.connectionFailed(error.localizedDescription)
             DispatchQueue.main.async {
                 self.connectionStateSubject.send(.failed(networkError))
             }
             connection?.cancel()
+            connection = nil
             attemptReconnection()
             
         case .cancelled:
+            print("NetworkManager: Connection cancelled")
+            isConnecting = false
             DispatchQueue.main.async {
                 self.connectionStateSubject.send(.disconnected)
             }
+            // Don't reconnect if explicitly cancelled
+            
+        case .waiting(let error):
+            print("NetworkManager: Connection waiting with error: \(error)")
+            // Network is temporarily unavailable, treat as failure to trigger reconnection
+            isConnecting = false
+            let networkError = NetworkError.connectionFailed(error.localizedDescription)
+            DispatchQueue.main.async {
+                self.connectionStateSubject.send(.failed(networkError))
+            }
+            connection?.cancel()
+            connection = nil
+            attemptReconnection()
+            
+        case .preparing:
+            print("NetworkManager: Connection preparing")
+            // Connection is being prepared, wait for next state
             
         default:
             break
@@ -202,13 +264,21 @@ final class NetworkManager: NetworkManagerProtocol {
     }
     
     func disconnect() {
-        reconnectTimer?.invalidate()
-        connectionTimeoutTimer?.invalidate()
-        connection?.cancel()
-        connection = nil
-        
-        DispatchQueue.main.async {
-            self.connectionStateSubject.send(.disconnected)
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.isConnecting = false
+            self.reconnectAttempts = self.configuration?.maxReconnectAttempts ?? 0 // Prevent further reconnections
+            self.reconnectTimer?.invalidate()
+            self.reconnectTimer = nil
+            self.connectionTimeoutTimer?.invalidate()
+            self.connectionTimeoutTimer = nil
+            self.connection?.cancel()
+            self.connection = nil
+            
+            DispatchQueue.main.async {
+                self.connectionStateSubject.send(.disconnected)
+            }
         }
     }
     
@@ -217,15 +287,33 @@ final class NetworkManager: NetworkManagerProtocol {
     private func attemptReconnection() {
         guard let config = configuration,
               reconnectAttempts < config.maxReconnectAttempts else {
+            // Max attempts reached, reset connecting state
+            print("NetworkManager: Max reconnection attempts reached (\(configuration?.maxReconnectAttempts ?? 0))")
+            queue.async { [weak self] in
+                self?.isConnecting = false
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.connectionStateSubject.send(.disconnected)
+            }
             return
         }
         
         reconnectAttempts += 1
+        print("NetworkManager: Scheduling reconnection attempt \(reconnectAttempts)/\(config.maxReconnectAttempts) in \(config.reconnectDelay)s")
         
-        reconnectTimer?.invalidate()
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: config.reconnectDelay, repeats: false) { [weak self] _ in
-            self?.queue.async {
-                self?.establishConnection(config)
+        // Schedule timer on main thread to ensure it works
+        DispatchQueue.main.async { [weak self] in
+            self?.reconnectTimer?.invalidate()
+            self?.reconnectTimer = Timer.scheduledTimer(withTimeInterval: config.reconnectDelay, repeats: false) { _ in
+                print("NetworkManager: Attempting reconnection \(self?.reconnectAttempts ?? 0)")
+                self?.queue.async {
+                    guard let self = self else { return }
+                    // Reset connection state
+                    self.connection = nil
+                    self.isConnecting = false
+                    // Establish new connection
+                    self.establishConnection(config)
+                }
             }
         }
     }
@@ -265,10 +353,13 @@ final class NetworkManager: NetworkManagerProtocol {
             guard let self = self else { return }
             
             if let error = error {
+                print("NetworkManager: Receive error: \(error)")
                 DispatchQueue.main.async {
                     self.connectionStateSubject.send(.failed(.connectionFailed(error.localizedDescription)))
                 }
                 self.connection?.cancel()
+                self.connection = nil
+                self.attemptReconnection()
                 return
             }
             
@@ -277,9 +368,12 @@ final class NetworkManager: NetworkManagerProtocol {
             }
             
             if isComplete {
+                print("NetworkManager: Connection closed by server")
                 DispatchQueue.main.async {
                     self.connectionStateSubject.send(.disconnected)
                 }
+                self.connection = nil
+                self.attemptReconnection()
                 return
             }
             
@@ -290,8 +384,11 @@ final class NetworkManager: NetworkManagerProtocol {
     
     private func processReceivedData(_ data: Data) {
         guard let (type, payload) = PacketDecoder.decode(from: data) else {
+            print("Failed to decode packet")
             return
         }
+        
+        print("Received packet: \(type.description)")
         
         let receivedPacket = ReceivedPacket(
             type: type,

@@ -207,6 +207,7 @@ struct ConnectionStatusView: View {
             }
             .buttonStyle(.bordered)
             .tint(coordinator.connectionState.isConnected ? .red : .blue)
+            .disabled(isConnecting)
         }
     }
     
@@ -224,7 +225,12 @@ struct ConnectionStatusView: View {
         case .connected: return "Connected"
         case .connecting: return "Connecting..."
         case .disconnected: return "Disconnected"
-        case .failed(let error): return error.localizedDescription
+        case .failed(let error): 
+            // Show simplified error message
+            if error.localizedDescription.contains("Server not available") {
+                return "Server not available"
+            }
+            return error.localizedDescription
         }
     }
     
@@ -245,6 +251,13 @@ struct ConnectionStatusView: View {
         } else {
             coordinator.connect()
         }
+    }
+    
+    private var isConnecting: Bool {
+        if case .connecting = coordinator.connectionState {
+            return true
+        }
+        return false
     }
 }
 
@@ -360,9 +373,18 @@ struct VisualizationView: View {
     
     var body: some View {
         VStack(spacing: 12) {
-            // Top section: ServerStateView (full width)
-            ServerStateView()
-                .frame(height: 80)
+            // Top section: ServerStateView and PID Settings side by side
+            HStack(spacing: 12) {
+                // ServerStateView (left)
+                ServerStateView()
+                    .frame(height: 90)
+                    .frame(maxWidth: .infinity)
+                
+                // PID Settings (right)
+//                PIDSettingsCompactView()
+//                    .frame(height: 160)
+//                    .frame(width: 400)
+            }
             
             // Middle section: Y Offset Control (left) and CameraView (right)
             GeometryReader { geometry in
@@ -421,6 +443,42 @@ struct VisualizationView: View {
                 .frame(height: 100)
         }
         .padding()
+    }
+}
+
+// MARK: - Compact PID Settings View
+struct PIDSettingsCompactView: View {
+    @EnvironmentObject var coordinator: ControlCoordinator
+    @EnvironmentObject var settingsStore: SettingsStore
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("PID Settings")
+                .font(.caption)
+                .fontWeight(.medium)
+                .padding(.vertical, 4)
+            
+            Divider()
+            
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Show PID controls only in AutoAim or Autonomous mode
+                    if coordinator.systemState.drivingMode == .autoAim || coordinator.systemState.drivingMode == .autonomous {
+                        PIDControlView()
+                            .padding()
+                    } else {
+                        Text("PID controls available in\nAutoAim or Autonomous mode")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
     }
 }
 

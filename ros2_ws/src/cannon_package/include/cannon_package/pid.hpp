@@ -95,8 +95,7 @@ public:
     double getIntegralThreshold() const { return integral_threshold_; }
 
     double getLastError() { return error_; }
-    double getLastPsignal() const { return psignal_; }
-    double getLastIsignal() const { return isignal_; }
+    std::pair<double, double> getLastPIsignals() const { return {psignal_, isignal_}; }
 
     void reset() { integral_=0.0; first_call_=true; }
 
