@@ -22,7 +22,7 @@ struct NESCControlView: View {
                     .disabled(!coordinator.systemState.isRunning)
                     
                     Slider(value: $escValue, in: 0...1, step: 0.01)
-                        .onChange(of: escValue) { newValue in
+                        .onChange(of: escValue) { _, newValue in
                             Task {
                                 let roundedValue = round(newValue * 100) / 100
                                 try? await coordinator.sendESCCommand(roundedValue)
@@ -169,7 +169,7 @@ struct ManualControlsView: View {
                                     }
                                 }
                             }
-                            .onChange(of: pitchValue) { newValue in
+                            .onChange(of: pitchValue) { _, newValue in
                                 Task {
                                     let roundedPitch = round(newValue * 100) / 100
                                     let roundedYaw = round(yawValue * 100) / 100
@@ -208,7 +208,7 @@ struct ManualControlsView: View {
                                     }
                                 }
                             }
-                            .onChange(of: yawValue) { newValue in
+                            .onChange(of: yawValue) { _, newValue in
                                 Task {
                                     let roundedPitch = round(pitchValue * 100) / 100
                                     let roundedYaw = round(newValue * 100) / 100
@@ -285,7 +285,7 @@ struct PIDControlView: View {
                         title: "I Thres",
                         value: settingsStore.sharedPitchThreshold,
                         step: settingsStore.pitchIntegralThresholdStepSize,
-                        range: 0...1,
+                        range: 0...100,
                         onChange: { newValue in
                             settingsStore.sharedPitchThreshold = newValue
                         }
@@ -347,7 +347,7 @@ struct PIDControlView: View {
                         title: "I Limit",
                         value: settingsStore.sharedYawLimit,
                         step: settingsStore.yawIntegralLimitStepSize,
-                        range: 0...1000,
+                        range: -1000...1000,
                         onChange: { newValue in
                             settingsStore.sharedYawLimit = newValue
                         }
@@ -357,7 +357,7 @@ struct PIDControlView: View {
                         title: "I Thres",
                         value: settingsStore.sharedYawThreshold,
                         step: settingsStore.yawIntegralThresholdStepSize,
-                        range: 0...1,
+                        range: -1000...1000,
                         onChange: { newValue in
                             settingsStore.sharedYawThreshold = newValue
                         }
@@ -392,7 +392,7 @@ struct PIDControlView: View {
             // Only initialize once when first synchronized
             if synchronized && !hasInitialized {
                 // Small delay to ensure server values are populated
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     initializeFromPIDSettings()
                     hasInitialized = true
                 }
@@ -573,14 +573,20 @@ struct SystemSettingsView: View {
                         .frame(width: 140, alignment: .leading)
                     TextField("Hz", text: $cutoffFrequency)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 90)
+                        .frame(width: 100)
                         .keyboardType(.numbersAndPunctuation)
                         .focused($focusedField, equals: .cutoffFrequency)
                         .placeholder(when: cutoffFrequency.isEmpty) {
                             Text("--").foregroundColor(.gray)
                         }
-                        .onChange(of: cutoffFrequency) { newValue in
-                            print("Cutoff frequency changed to: \(newValue)")
+                        .onChange(of: cutoffFrequency) { _, newValue in
+                            // Filter to only allow numbers, decimal point, and minus sign
+                            let allowedCharacters = CharacterSet(charactersIn: "0123456789.-")
+                            let filtered = String(newValue.unicodeScalars.filter { allowedCharacters.contains($0) })
+                            if filtered != newValue {
+                                cutoffFrequency = filtered
+                            }
+                            print("Cutoff frequency changed to: \(cutoffFrequency)")
                         }
                         .onSubmit {
                             print("Cutoff frequency set to: \(cutoffFrequency)")
@@ -595,14 +601,14 @@ struct SystemSettingsView: View {
                         .frame(width: 140, alignment: .leading)
                     TextField("Count", text: $maxConsecutiveNans)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 90)
-                        .keyboardType(.numbersAndPunctuation)
+                        .frame(width: 100)
+                        .keyboardType(.numberPad)
                         .focused($focusedField, equals: .maxConsecutiveNans)
                         .placeholder(when: maxConsecutiveNans.isEmpty) {
                             Text("--").foregroundColor(.gray)
                         }
-                        .onChange(of: maxConsecutiveNans) { newValue in
-                            print("Max consecutive NANs changed to: \(newValue)")
+                        .onChange(of: maxConsecutiveNans) { _, newValue in
+                            print("Max consecutive NANs chan_, ged to: \(newValue)")
                         }
                         .onSubmit {
                             print("Max consecutive NANs set to: \(maxConsecutiveNans)")
@@ -618,14 +624,20 @@ struct SystemSettingsView: View {
                             Text("ε:")
                             TextField("Epsilon", text: $launchThresholdEps)
                                 .textFieldStyle(.roundedBorder)
-                                .frame(width: 60)
+                                .frame(width: 100)
                                 .keyboardType(.numbersAndPunctuation)
                                 .focused($focusedField, equals: .launchThresholdEps)
                                 .placeholder(when: launchThresholdEps.isEmpty) {
                                     Text("--").foregroundColor(.gray)
                                 }
-                                .onChange(of: launchThresholdEps) { newValue in
-                                    print("Launch threshold epsilon changed to: \(newValue)")
+                                .onChange(of: launchThresholdEps) { _, newValue in
+                                    // Filter to only allow numbers, decimal point, and minus sign
+                                    let allowedCharacters = CharacterSet(charactersIn: "0123456789.-")
+                                    let filtered = String(newValue.unicodeScalars.filter { allowedCharacters.contains($0) })
+                                    if filtered != newValue {
+                                        launchThresholdEps = filtered
+                                    }
+                                    print("Launch threshold epsilon changed to: \(launchThresholdEps)")
                                 }
                                 .onSubmit {
                                     print("Launch threshold epsilon set to: \(launchThresholdEps)")
@@ -635,13 +647,13 @@ struct SystemSettingsView: View {
                             Text("N:")
                             TextField("N", text: $launchThresholdN)
                                 .textFieldStyle(.roundedBorder)
-                                .frame(width: 60)
-                                .keyboardType(.numbersAndPunctuation)
+                                .frame(width: 100)
+                                .keyboardType(.numberPad)
                                 .focused($focusedField, equals: .launchThresholdN)
                                 .placeholder(when: launchThresholdN.isEmpty) {
                                     Text("--").foregroundColor(.gray)
                                 }
-                                .onChange(of: launchThresholdN) { newValue in
+                                .onChange(of: launchThresholdN) { _, newValue in
                                     print("Launch threshold N changed to: \(newValue)")
                                 }
                                 .onSubmit {
@@ -654,7 +666,7 @@ struct SystemSettingsView: View {
                 // Stop Throttle (Double)
                 HStack {
                     Text("Stop Throttle")
-                        .frame(width: 140, alignment: .leading)
+                        .frame(width: 120, alignment: .leading)
                     HStack(spacing: 4) {
                         Button("-") {
                             if let value = Double(stopThrottle) {
@@ -666,11 +678,19 @@ struct SystemSettingsView: View {
                         
                         TextField("Value", text: $stopThrottle)
                             .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
+                            .frame(width: 100)
                             .keyboardType(.numbersAndPunctuation)
                             .focused($focusedField, equals: .stopThrottle)
                             .placeholder(when: stopThrottle.isEmpty) {
                                 Text("--").foregroundColor(.gray)
+                            }
+                            .onChange(of: stopThrottle) { _, newValue in
+                                // Filter to only allow numbers, decimal point, and minus sign
+                                let allowedCharacters = CharacterSet(charactersIn: "0123456789.-")
+                                let filtered = String(newValue.unicodeScalars.filter { allowedCharacters.contains($0) })
+                                if filtered != newValue {
+                                    stopThrottle = filtered
+                                }
                             }
                         
                         Button("+") {
@@ -688,7 +708,7 @@ struct SystemSettingsView: View {
                 // Default Speed (Double)
                 HStack {
                     Text("Default Speed")
-                        .frame(width: 140, alignment: .leading)
+                        .frame(width: 120, alignment: .leading)
                     HStack(spacing: 4) {
                         Button("-") {
                             if let value = Double(defaultSpeed) {
@@ -700,11 +720,19 @@ struct SystemSettingsView: View {
                         
                         TextField("Value", text: $defaultSpeed)
                             .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
+                            .frame(width: 100)
                             .keyboardType(.numbersAndPunctuation)
                             .focused($focusedField, equals: .defaultSpeed)
                             .placeholder(when: defaultSpeed.isEmpty) {
                                 Text("--").foregroundColor(.gray)
+                            }
+                            .onChange(of: defaultSpeed) { _, newValue in
+                                // Filter to only allow numbers, decimal point, and minus sign
+                                let allowedCharacters = CharacterSet(charactersIn: "0123456789.-")
+                                let filtered = String(newValue.unicodeScalars.filter { allowedCharacters.contains($0) })
+                                if filtered != newValue {
+                                    defaultSpeed = filtered
+                                }
                             }
                         
                         Button("+") {
@@ -722,8 +750,8 @@ struct SystemSettingsView: View {
                 // Motor Offset (Double)
                 HStack {
                     Text("Motor Offset")
-                        .frame(width: 140, alignment: .leading)
-                    HStack(spacing: 4) {
+                        .frame(width: 120, alignment: .leading)
+                    HStack(spacing: 1) {
                         Button("-") {
                             if let value = Double(motorOffset) {
                                 motorOffset = String(format: "%.4f", max(-1, value - 0.001))
@@ -734,11 +762,19 @@ struct SystemSettingsView: View {
                         
                         TextField("Value", text: $motorOffset)
                             .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
+                            .frame(width: 100)
                             .keyboardType(.numbersAndPunctuation)
                             .focused($focusedField, equals: .motorOffset)
                             .placeholder(when: motorOffset.isEmpty) {
                                 Text("--").foregroundColor(.gray)
+                            }
+                            .onChange(of: motorOffset) { _, newValue in
+                                // Filter to only allow numbers, decimal point, and minus sign
+                                let allowedCharacters = CharacterSet(charactersIn: "0123456789.-")
+                                let filtered = String(newValue.unicodeScalars.filter { allowedCharacters.contains($0) })
+                                if filtered != newValue {
+                                    motorOffset = filtered
+                                }
                             }
                         
                         Button("+") {
@@ -793,7 +829,7 @@ struct SystemSettingsView: View {
             // Only initialize once when first synchronized
             if synchronized && !hasInitialized {
                 // Small delay to ensure server values are populated
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     initializeFromSystemState()
                     hasInitialized = true
                 }
@@ -982,7 +1018,15 @@ struct NumericInputRow: View {
                 .font(.system(.body, design: .monospaced))
                 .frame(width: 90)
                 .focused($isFocused)
-                .onChange(of: textValue) { newValue in
+                .onChange(of: textValue) { _, newValue in
+                    // Filter to only allow numbers, decimal point, and minus sign
+                    let allowedCharacters = CharacterSet(charactersIn: "0123456789.-")
+                    let filtered = String(newValue.unicodeScalars.filter { allowedCharacters.contains($0) })
+                    if filtered != newValue {
+                        textValue = filtered
+                        return
+                    }
+                    
                     if let newDouble = Double(newValue) {
                         onChange(newDouble)
                     }
@@ -996,7 +1040,7 @@ struct NumericInputRow: View {
                         textValue = String(format: "%.4f", value)
                     }
                 }
-                .onChange(of: value) { newValue in
+                .onChange(of: value) { _, newValue in
                     if !isFocused {
                         textValue = String(format: "%.4f", newValue)
                     }

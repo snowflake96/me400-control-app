@@ -335,7 +335,7 @@ struct ServerStateView: View {
     private var pitchPText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverPitchP {
-            return String(format: "%.2f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }
@@ -343,7 +343,7 @@ struct ServerStateView: View {
     private var pitchIText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverPitchI {
-            return String(format: "%.2f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }
@@ -351,7 +351,7 @@ struct ServerStateView: View {
     private var pitchILimitText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverPitchILimit {
-            return String(format: "%.2f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }
@@ -359,7 +359,7 @@ struct ServerStateView: View {
     private var pitchIThresholdText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverPitchIThreshold {
-            return String(format: "%.3f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }
@@ -367,7 +367,7 @@ struct ServerStateView: View {
     private var yawPText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverYawP {
-            return String(format: "%.2f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }
@@ -375,7 +375,7 @@ struct ServerStateView: View {
     private var yawIText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverYawI {
-            return String(format: "%.2f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }
@@ -383,7 +383,7 @@ struct ServerStateView: View {
     private var yawILimitText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverYawILimit {
-            return String(format: "%.2f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }
@@ -391,7 +391,7 @@ struct ServerStateView: View {
     private var yawIThresholdText: String {
         guard isConnectedAndSynchronized else { return "N/A" }
         if let value = coordinator.systemState.serverYawIThreshold {
-            return String(format: "%.3f", value)
+            return String(format: "%.4f", value)
         }
         return "N/A"
     }

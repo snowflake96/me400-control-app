@@ -463,32 +463,36 @@ struct YOffsetControlView: View {
             Text("Y Offset")
                 .font(.caption)
                 .fontWeight(.medium)
-            
-            HStack(spacing: 4) {
-                Button("-") {
-                    settingsStore.targetOffsetY = max(-0.1, settingsStore.targetOffsetY - 0.001)
+            VStack(spacing:4){
+                HStack(spacing: 20) {
+                    Button("-") {
+                        settingsStore.targetOffsetY = max(-0.2, settingsStore.targetOffsetY - 0.001)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!coordinator.connectionState.isConnected)
+                    
+//                    Text(String(format: "%.3f", settingsStore.targetOffsetY))
+//                        .font(.system(size: 10, design: .monospaced))
+//                        .frame(width: 40)
+                    
+                    Button("+") {
+                        settingsStore.targetOffsetY = min(0.2, settingsStore.targetOffsetY + 0.001)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!coordinator.connectionState.isConnected)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!coordinator.connectionState.isConnected)
-                
                 Text(String(format: "%.3f", settingsStore.targetOffsetY))
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(width: 60)
-                
-                Button("+") {
-                    settingsStore.targetOffsetY = min(0.1, settingsStore.targetOffsetY + 0.001)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!coordinator.connectionState.isConnected)
+                    .font(.system(size: 15, design: .monospaced))
+                    .frame(width: 75)
             }
             
             // Rotated vertical slider
             GeometryReader { geometry in
                 RotatedVerticalSlider(
                     value: $settingsStore.targetOffsetY,
-                    in: -0.1...0.1,
+                    in: -0.2...0.2,
                     step: 0.001
                 )
                 .frame(width: geometry.size.height, height: 40)
@@ -508,7 +512,7 @@ struct YOffsetControlView: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
         }
-        .padding()
+        .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGray6))
         .cornerRadius(10)
@@ -538,7 +542,7 @@ struct XOffsetControlView: View {
                         .foregroundColor(.secondary)
                     
                     Button("-") {
-                        settingsStore.targetOffsetX = max(-0.1, settingsStore.targetOffsetX - 0.001)
+                        settingsStore.targetOffsetX = max(-0.2, settingsStore.targetOffsetX - 0.001)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -546,13 +550,13 @@ struct XOffsetControlView: View {
                     
                     Slider(
                         value: $settingsStore.targetOffsetX,
-                        in: -0.1...0.1,
+                        in: -0.2...0.2,
                         step: 0.001
                     )
                     .disabled(!coordinator.connectionState.isConnected)
                     
                     Button("+") {
-                        settingsStore.targetOffsetX = min(0.1, settingsStore.targetOffsetX + 0.001)
+                        settingsStore.targetOffsetX = min(0.2, settingsStore.targetOffsetX + 0.001)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)

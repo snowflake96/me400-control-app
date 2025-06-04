@@ -37,7 +37,7 @@ struct SystemState {
     var serverYawIThreshold: Double? = nil
     
     // Parameters
-    var launchCounter: UInt32 = 0
+    var launchCounter: UInt8 = 0
     var maxConsecutiveNans: UInt8 = 20  // Client-managed, not from server CurrentState
     var launchThresholdN: UInt8 = 10      // From server
     var launchThresholdEps: Double = 0.005 // From server
@@ -473,9 +473,9 @@ final class SystemStateManager: SystemStateManagerProtocol {
     }
     
     private func processLaunchCounter(_ payload: Data) {
-        guard payload.count >= 4 else { return }
+        guard payload.count >= 1 else { return }
         
-        let counter = PacketDecoder.readUInt32(at: 0, from: payload)
+        let counter = PacketDecoder.readUInt8(at: 0, from: payload)
         
         updateState { state in
             state.launchCounter = counter

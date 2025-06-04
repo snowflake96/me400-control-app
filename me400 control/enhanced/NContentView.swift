@@ -39,10 +39,9 @@ struct NContentView: View {
             // Initialize values from system state only once when first synchronized
             if synchronized && !hasInitializedFromServer {
                 // Small delay to ensure server values are populated
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     settingsStore.initializePIDFromSystemState(coordinator.systemState)
-                    settingsStore.targetOffsetX = coordinator.systemState.targetX
-                    settingsStore.targetOffsetY = coordinator.systemState.targetY
+                    settingsStore.initializeTargetOffsetFromSystemState(coordinator.systemState)
                     hasInitializedFromServer = true
                     
                     // Do NOT send offset automatically - wait for user to press Send button
@@ -420,7 +419,7 @@ struct VisualizationView: View {
                                 }
                                 
                                 // Launch Counter
-                                if coordinator.systemState.launchCounter > 0 {
+                                if coordinator.systemState.launchCounter >= 0 {
                                     Label("Launches: \(coordinator.systemState.launchCounter)", systemImage: "flame")
                                         .font(.caption)
                                         .foregroundColor(.white)

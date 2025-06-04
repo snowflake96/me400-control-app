@@ -74,6 +74,12 @@ final class SettingsStore: ObservableObject {
         sharedYawLimit = state.yawIntegralLimit
     }
     
+    // Initialize target offset values from system state
+    func initializeTargetOffsetFromSystemState(_ state: SystemState) {
+        targetOffsetX = state.targetX
+        targetOffsetY = state.targetY
+    }
+    
     func createNetworkConfiguration() -> NetworkConfiguration {
         guard let port = UInt16(serverPort) else {
             return NetworkConfiguration(
