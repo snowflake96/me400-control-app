@@ -46,7 +46,7 @@ This app is designed for communicating via TCP/IP with the master node at https:
 
 ## Usage
 
-1. Open the app and configure the Host's IP address and Port number. You may use either a fixed IP or VPN IP (such as Tailscale).
+1. Open the app and configure the Host's IP address and Port number in settings. You may use either a fixed IP or VPN IP (such as Tailscale).
 2. Start the server and press the **[Connect]** button.
 3. If successfully connected, you will see the text "synchronized".
 4. After connecting to the robot, you can send data packets by pressing buttons and control the robot in real-time.
