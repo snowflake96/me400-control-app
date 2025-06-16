@@ -5,23 +5,24 @@ struct NContentView: View {
     @EnvironmentObject var settingsStore: SettingsStore
     @State private var showingSettings = false
     @State private var hasInitializedFromServer = false
+    @State private var competitionMode = false
     
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HeaderView(showingSettings: $showingSettings)
+            HeaderView(showingSettings: $showingSettings, competitionMode: $competitionMode)
             
-            // Main Content
+            // Main Content (Control panel on left, Camera on right)
             GeometryReader { geometry in
                 HStack(spacing: 0) {
-                    // Control Panel
-                    ControlPanelView()
+                    // Left side - Control panel
+                    ControlPanelView(competitionMode: competitionMode)
                         .frame(width: geometry.size.width * 0.3)
                         .background(Color(.systemGray6))
                     
-                    // Visualization
-                    VisualizationView()
-                        .frame(maxWidth: .infinity)
+                    // Right side - Camera and visualization
+                    VisualizationView(competitionMode: competitionMode)
+                        .frame(width: geometry.size.width * 0.7)
                 }
             }
         }
@@ -61,15 +62,17 @@ struct NContentView: View {
 struct HeaderView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @Binding var showingSettings: Bool
+    @Binding var competitionMode: Bool
     
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 // Settings Button
                 Button(action: { showingSettings = true }) {
-                    Label("Settings", systemImage: "gear")
+                    Image(systemName: "gear")
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
                 
                 Spacer()
                 
@@ -79,8 +82,9 @@ struct HeaderView: View {
                 Spacer()
                 
                 // System Controls
-                SystemControlsView()
+                SystemControlsView(competitionMode: $competitionMode)
             }
+            .frame(height:50)
             .padding(.horizontal)
             
             // Log Message Display - Always visible
@@ -91,71 +95,29 @@ struct HeaderView: View {
                     .padding(.trailing, 4)
                 
                 // Parse and display log messages with transparency gradient
-                if coordinator.systemState.lastLogMessage.isEmpty {
-                    Text("No messages")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                } else {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        let messages = coordinator.systemState.lastLogMessage.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-                        ForEach(0..<4, id: \.self) { index in
-                            if index > 0 {
-                                // Divider
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(width: 1)
-                                    .frame(height: 20)
-                            }
-                            
-                            // Message box
-                            HStack {
-                                if index < messages.count {
-                                    Text(messages[index])
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(Color.black.opacity(opacityForIndex(index)))
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                } else {
-                                    Text(" ")
-                                        .font(.caption)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 4)
+                        // Use system state's lastLogMessage instead of logMessages array
+                        if coordinator.systemState.lastLogMessage.isEmpty {
+                            Text("No messages")
+                                .font(.system(.headline, design: .monospaced))
+                                .foregroundColor(.white)
+                                .opacity(0.6)
+                                .padding(.trailing, 8)
+                        } else {
+                            Text(coordinator.systemState.lastLogMessage)
+                                .font(.system(.headline, design: .monospaced))
+                                .foregroundColor(.white)
+                                .opacity(1.0)
+                                .padding(.trailing, 8)
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                
-                Spacer()
+                .frame(height: 50)
             }
             .padding(.horizontal)
-            .padding(.vertical, 8)
-            .background(
-                coordinator.systemState.lastLogMessage.isEmpty ? 
-                Color.orange.opacity(0.1) : 
-                Color.yellow.opacity(0.7)
-            )
-        }
-        .background(Color(.systemBackground))
-        .frame(height: 100)  // Fixed height
-        .overlay(
-            Rectangle()
-                .fill(Color(.separator))
-                .frame(height: 1),
-            alignment: .bottom
-        )
-    }
-    
-    private func opacityForIndex(_ index: Int) -> Double {
-        switch index {
-        case 0: return 1.0    // 100% visible
-        case 1: return 0.8    // 80% visible
-        case 2: return 0.6    // 60% visible
-        case 3: return 0.4    // 40% visible
-        default: return 0.0
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.8))
         }
     }
 }
@@ -264,6 +226,7 @@ struct ConnectionStatusView: View {
 struct SystemControlsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
+    @Binding var competitionMode: Bool
     
     var body: some View {
         HStack(spacing: 16) {
@@ -300,7 +263,12 @@ struct SystemControlsView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color(.systemGray3), lineWidth: 1)
             )
-            .frame(width: 400)
+            .frame(width: 300)
+            
+            // Competition Mode Toggle
+            Toggle("Competition Mode", isOn: $competitionMode)
+                .toggleStyle(SwitchToggleStyle(tint: .orange))
+                .frame(width: 150)
             
             // Running Status - More visible
             HStack(spacing: 8) {
@@ -344,6 +312,7 @@ struct SystemControlsView: View {
 // MARK: - Control Panel View
 struct ControlPanelView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
+    let competitionMode: Bool
     
     var body: some View {
         ScrollView {
@@ -353,13 +322,13 @@ struct ControlPanelView: View {
                 case .manual:
                     ManualControlsView()
                 case .autoAim:
-                    AutoAimControlsView()
+                    AutoAimControlsView(competitionMode: competitionMode)
                 case .autonomous:
-                    AutonomousControlsView()
+                    AutonomousControlsView(competitionMode: competitionMode)
                 }
                 
                 // Common settings
-                SystemSettingsView()
+                SystemSettingsView(competitionMode: competitionMode)
             }
             .padding()
         }
@@ -369,6 +338,7 @@ struct ControlPanelView: View {
 // MARK: - Visualization View
 struct VisualizationView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
+    let competitionMode: Bool
     
     var body: some View {
         VStack(spacing: 12) {
@@ -380,16 +350,14 @@ struct VisualizationView: View {
                     .frame(maxWidth: .infinity)
                 
                 // PID Settings (right)
-//                PIDSettingsCompactView()
-//                    .frame(height: 160)
-//                    .frame(width: 400)
+//                PIDSettingsCompactView(competitionMode: competitionMode)
             }
             
             // Middle section: Y Offset Control (left) and CameraView (right)
             GeometryReader { geometry in
                 HStack(spacing: 12) {
                     // Y Offset Control (left side)
-                    YOffsetControlView()
+                    YOffsetControlView(competitionMode: competitionMode)
                         .frame(width: 100)
                         .frame(maxHeight: .infinity)
                     
@@ -403,22 +371,35 @@ struct VisualizationView: View {
                         // Overlay information on camera view
                         VStack {
                             HStack {
+                                VStack(alignment: .leading) {
+                                    CameraInfoView()
+                                    ErrorInfoView()
+                                }
+                                .padding(.leading, 8)
+                                .padding(.top, 8)
+                                
                                 Spacer()
                                 
                                 // Tilt Information (top right)
-                                if coordinator.connectionState.isConnected {
-                                    VStack(alignment: .trailing, spacing: 4) {
-                                        Label("Roll: \(coordinator.systemState.tiltRoll, specifier: "%.1f")°", systemImage: "rotate.left")
-                                        Label("Pitch: \(coordinator.systemState.tiltPitch, specifier: "%.1f")°", systemImage: "rotate.right")
-                                    }
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                                    .padding(8)
-                                    .background(Color.black.opacity(0.7))
-                                    .cornerRadius(8)
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Label("Roll: \(coordinator.systemState.tiltRoll, specifier: "%.1f")°", systemImage: "rotate.left")
+                                    Label("Pitch: \(coordinator.systemState.tiltPitch, specifier: "%.1f")°", systemImage: "rotate.right")
                                 }
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(Color.black.opacity(0.7))
+                                .cornerRadius(8)
+                                .padding(.trailing, 8)
+                                .padding(.top, 8)
+                            }
+                            
+                            Spacer()
+                            
+                            // Launch Counter (bottom right)
+                            HStack {
+                                Spacer()
                                 
-                                // Launch Counter
                                 if coordinator.systemState.launchCounter >= 0 {
                                     Label("Launches: \(coordinator.systemState.launchCounter)", systemImage: "flame")
                                         .font(.caption)
@@ -426,19 +407,17 @@ struct VisualizationView: View {
                                         .padding(8)
                                         .background(Color.black.opacity(0.7))
                                         .cornerRadius(8)
+                                        .padding(.trailing, 8)
+                                        .padding(.bottom, 8)
                                 }
                             }
-                            .padding()
-                            
-                            Spacer()
                         }
                     }
                 }
             }
-            .frame(maxHeight: .infinity)
             
-            // Bottom section: X Offset Control (full width)
-            XOffsetControlView()
+            // Bottom section: X Offset Control
+            XOffsetControlView(competitionMode: competitionMode)
                 .frame(height: 100)
         }
         .padding()
@@ -449,6 +428,7 @@ struct VisualizationView: View {
 struct PIDSettingsCompactView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
+    let competitionMode: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -463,7 +443,7 @@ struct PIDSettingsCompactView: View {
                 VStack(spacing: 16) {
                     // Show PID controls only in AutoAim or Autonomous mode
                     if coordinator.systemState.drivingMode == .autoAim || coordinator.systemState.drivingMode == .autonomous {
-                        PIDControlView()
+                        PIDControlView(competitionMode: competitionMode)
                             .padding()
                     } else {
                         Text("PID controls available in\nAutoAim or Autonomous mode")

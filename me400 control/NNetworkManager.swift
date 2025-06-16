@@ -195,10 +195,10 @@ final class NetworkManager: NetworkManagerProtocol {
             if !self.connectionStateSubject.value.isConnected {
                 self.queue.async {
                     self.isConnecting = false
-                    self.connection?.cancel()
+                self.connection?.cancel()
                     
-                    DispatchQueue.main.async {
-                        self.connectionStateSubject.send(.failed(.connectionTimeout))
+                DispatchQueue.main.async {
+                    self.connectionStateSubject.send(.failed(.connectionTimeout))
                     }
                     
                     // Attempt reconnection after timeout
@@ -275,9 +275,9 @@ final class NetworkManager: NetworkManagerProtocol {
             self.connectionTimeoutTimer = nil
             self.connection?.cancel()
             self.connection = nil
-            
-            DispatchQueue.main.async {
-                self.connectionStateSubject.send(.disconnected)
+        
+        DispatchQueue.main.async {
+            self.connectionStateSubject.send(.disconnected)
             }
         }
     }
@@ -306,7 +306,7 @@ final class NetworkManager: NetworkManagerProtocol {
             self?.reconnectTimer?.invalidate()
             self?.reconnectTimer = Timer.scheduledTimer(withTimeInterval: config.reconnectDelay, repeats: false) { _ in
                 print("NetworkManager: Attempting reconnection \(self?.reconnectAttempts ?? 0)")
-                self?.queue.async {
+            self?.queue.async {
                     guard let self = self else { return }
                     // Reset connection state
                     self.connection = nil

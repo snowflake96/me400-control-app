@@ -129,11 +129,11 @@ final class ControlCoordinator: ObservableObject {
             print("Client synchronized with server")
             
             // Set synchronized flag
-            self.isSynchronized = true
-            
+                self.isSynchronized = true
+                
             // Start regular query timer for periodic updates
-            self.startQueryTimer()
-        }
+                self.startQueryTimer()
+            }
         
         print("ControlCoordinator: Callbacks set, sending initial query")
         
@@ -169,7 +169,7 @@ final class ControlCoordinator: ObservableObject {
         // Reset latency to 0 for clean UI
         latency = 0.0
         
-        stopQueryTimer()
+            stopQueryTimer()
     }
     
     func updateConfiguration(_ config: NetworkConfiguration) {
@@ -222,6 +222,16 @@ final class ControlCoordinator: ObservableObject {
     }
     
     func setMode(_ mode: DrivingMode) async throws {
+        // If switching to autonomous mode, first send stop command and update running state
+        if mode == .autonomous {
+            // Send stop packet first
+            let stopPacket = PacketFactory.stop()
+            try await networkManager.send(stopPacket)
+            
+            // Update client running state to false
+            stateManager.updateRunningState(false)
+        }
+        
         // Send mode change to server
         let packet = PacketFactory.setMode(mode)
         try await networkManager.send(packet)
@@ -341,11 +351,11 @@ final class ControlCoordinator: ObservableObject {
     
     func updateLatency() {
         guard let queryTime = lastQueryTime else { 
-            // If no query time, don't update latency (keep last value or 0)
-            return 
-        }
-        
-        let currentLatency = Date().timeIntervalSince(queryTime)
+                // If no query time, don't update latency (keep last value or 0)
+                return 
+            }
+            
+            let currentLatency = Date().timeIntervalSince(queryTime)
         latency = currentLatency
     }
     

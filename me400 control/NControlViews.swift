@@ -240,11 +240,25 @@ struct PIDControlView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
     @State private var hasInitialized: Bool = false
+    let competitionMode: Bool
     
     var body: some View {
         // PID Parameters
         GroupBox("PID Parameters") {
             VStack(spacing: 16) {
+                // Competition mode warning
+                if competitionMode {
+                    HStack {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(.orange)
+                        Text("PID controls locked in Competition Mode")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.vertical, 4)
+                }
+                
                 // Pitch PID
                 VStack(spacing: 12) {
                     Text("Pitch PID")
@@ -256,6 +270,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedPitchP,
                         step: settingsStore.pitchPStepSize,
                         range: -1000...1000,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedPitchP = newValue
                         }
@@ -266,6 +281,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedPitchI,
                         step: settingsStore.pitchIStepSize,
                         range: -1000...1000,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedPitchI = newValue
                         }
@@ -276,6 +292,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedPitchLimit,
                         step: settingsStore.pitchIntegralLimitStepSize,
                         range: 0...1000,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedPitchLimit = newValue
                         }
@@ -286,6 +303,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedPitchThreshold,
                         step: settingsStore.pitchIntegralThresholdStepSize,
                         range: 0...100,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedPitchThreshold = newValue
                         }
@@ -298,6 +316,7 @@ struct PIDControlView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
+                        .disabled(competitionMode)
                         
                         Button("Send Limit") {
                             Task {
@@ -305,6 +324,7 @@ struct PIDControlView: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                        .disabled(competitionMode)
                         
                         Button("Send Thres") {
                             Task {
@@ -312,6 +332,7 @@ struct PIDControlView: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                        .disabled(competitionMode)
                     }
                 }
                 
@@ -328,6 +349,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedYawP,
                         step: settingsStore.yawPStepSize,
                         range: -1000...1000,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedYawP = newValue
                         }
@@ -338,6 +360,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedYawI,
                         step: settingsStore.yawIStepSize,
                         range: -1000...1000,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedYawI = newValue
                         }
@@ -348,6 +371,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedYawLimit,
                         step: settingsStore.yawIntegralLimitStepSize,
                         range: -1000...1000,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedYawLimit = newValue
                         }
@@ -358,6 +382,7 @@ struct PIDControlView: View {
                         value: settingsStore.sharedYawThreshold,
                         step: settingsStore.yawIntegralThresholdStepSize,
                         range: -1000...1000,
+                        competitionMode: competitionMode,
                         onChange: { newValue in
                             settingsStore.sharedYawThreshold = newValue
                         }
@@ -370,6 +395,7 @@ struct PIDControlView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
+                        .disabled(competitionMode)
                         
                         Button("Send Limit") {
                             Task {
@@ -377,6 +403,7 @@ struct PIDControlView: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                        .disabled(competitionMode)
                         
                         Button("Send Thres") {
                             Task {
@@ -384,6 +411,7 @@ struct PIDControlView: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                        .disabled(competitionMode)
                     }
                 }
             }
@@ -474,6 +502,7 @@ struct StatusView: View {
 struct AutoAimControlsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
+    let competitionMode: Bool
     
     var body: some View {
         VStack(spacing: 20) {
@@ -484,7 +513,7 @@ struct AutoAimControlsView: View {
             StatusView()
             
             // PID Control
-            PIDControlView()
+            PIDControlView(competitionMode: competitionMode)
             
             // ESC Control
             NESCControlView()
@@ -497,6 +526,7 @@ struct AutoAimControlsView: View {
 struct AutonomousControlsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
+    let competitionMode: Bool
     
     var body: some View {
         VStack(spacing: 20) {
@@ -507,7 +537,7 @@ struct AutonomousControlsView: View {
             StatusView()
             
             // PID Control
-            PIDControlView()
+            PIDControlView(competitionMode: competitionMode)
         }
         .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
     }
@@ -516,6 +546,7 @@ struct AutonomousControlsView: View {
 // MARK: - System Settings View
 struct SystemSettingsView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
+    let competitionMode: Bool
     @State private var cutoffFrequency: String = ""
     @State private var maxConsecutiveNans: String = ""
     @State private var launchThresholdEps: String = ""
@@ -536,36 +567,32 @@ struct SystemSettingsView: View {
     }
     
     @FocusState private var focusedField: Field?
-    @State private var isSending: Bool = false
-    @State private var lastSendTime: Date?
+    
+    // Individual sending states for each setting
+    @State private var isSendingCutoffFreq: Bool = false
+    @State private var isSendingMaxNans: Bool = false
+    @State private var isSendingLaunchThreshold: Bool = false
+    @State private var isSendingStopThrottle: Bool = false
+    @State private var isSendingDefaultSpeed: Bool = false
+    @State private var isSendingMotorOffset: Bool = false
+    
     @State private var hasInitialized: Bool = false
     
     var body: some View {
         GroupBox("System Settings") {
             VStack(spacing: 12) {
-                
-                // Send Settings Button
-                HStack {
-                    Button("Send Settings") {
-                        sendAllSettings()
+                // Competition mode warning
+                if competitionMode {
+                    HStack {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(.orange)
+                        Text("Settings locked in Competition Mode")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSending || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
-                    
-                    if isSending {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else if let lastSend = lastSendTime, Date().timeIntervalSince(lastSend) < 2 {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .transition(.scale.combined(with: .opacity))
-                    }
+                    .padding(.vertical, 4)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
-                
-                
-                
                 
                 // Cutoff Frequency (Double)
                 HStack {
@@ -586,13 +613,27 @@ struct SystemSettingsView: View {
                             if filtered != newValue {
                                 cutoffFrequency = filtered
                             }
-                            print("Cutoff frequency changed to: \(cutoffFrequency)")
                         }
-                        .onSubmit {
-                            print("Cutoff frequency set to: \(cutoffFrequency)")
-                        }
+                        .disabled(competitionMode)
+                        .opacity(competitionMode ? 0.5 : 1.0)
                     Text("Hz")
                         .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    // Send button for Cutoff Frequency
+                    Button(action: { sendCutoffFrequency() }) {
+                        if isSendingCutoffFreq {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "arrow.up")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .frame(width: 32, height: 28)
+                    .disabled(competitionMode || isSendingCutoffFreq || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
                 }
                 
                 // Max Consecutive NANs (UInt8)
@@ -607,12 +648,24 @@ struct SystemSettingsView: View {
                         .placeholder(when: maxConsecutiveNans.isEmpty) {
                             Text("--").foregroundColor(.gray)
                         }
-                        .onChange(of: maxConsecutiveNans) { _, newValue in
-                            print("Max consecutive NANs chan_, ged to: \(newValue)")
+                        .disabled(competitionMode)
+                        .opacity(competitionMode ? 0.5 : 1.0)
+                    
+                    Spacer()
+                    
+                    // Send button for Max NANs
+                    Button(action: { sendMaxConsecutiveNans() }) {
+                        if isSendingMaxNans {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "arrow.up")
                         }
-                        .onSubmit {
-                            print("Max consecutive NANs set to: \(maxConsecutiveNans)")
-                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .frame(width: 32, height: 28)
+                    .disabled(competitionMode || isSendingMaxNans || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
                 }
                 
                 // Launch Thresholds
@@ -637,11 +690,9 @@ struct SystemSettingsView: View {
                                     if filtered != newValue {
                                         launchThresholdEps = filtered
                                     }
-                                    print("Launch threshold epsilon changed to: \(launchThresholdEps)")
                                 }
-                                .onSubmit {
-                                    print("Launch threshold epsilon set to: \(launchThresholdEps)")
-                                }
+                                .disabled(competitionMode)
+                                .opacity(competitionMode ? 0.5 : 1.0)
                         }
                         HStack {
                             Text("N:")
@@ -653,14 +704,26 @@ struct SystemSettingsView: View {
                                 .placeholder(when: launchThresholdN.isEmpty) {
                                     Text("--").foregroundColor(.gray)
                                 }
-                                .onChange(of: launchThresholdN) { _, newValue in
-                                    print("Launch threshold N changed to: \(newValue)")
-                                }
-                                .onSubmit {
-                                    print("Launch threshold N set to: \(launchThresholdN)")
-                                }
+                                .disabled(competitionMode)
+                                .opacity(competitionMode ? 0.5 : 1.0)
                         }
                     }
+                    
+                    Spacer()
+                    
+                    // Send button for Launch Threshold
+                    Button(action: { sendLaunchThreshold() }) {
+                        if isSendingLaunchThreshold {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "arrow.up")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .frame(width: 32, height: 28)
+                    .disabled(competitionMode || isSendingLaunchThreshold || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
                 }
                 
                 // Stop Throttle (Double)
@@ -675,6 +738,7 @@ struct SystemSettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(competitionMode)
                         
                         TextField("Value", text: $stopThrottle)
                             .textFieldStyle(.roundedBorder)
@@ -692,6 +756,8 @@ struct SystemSettingsView: View {
                                     stopThrottle = filtered
                                 }
                             }
+                            .disabled(competitionMode)
+                            .opacity(competitionMode ? 0.5 : 1.0)
                         
                         Button("+") {
                             if let value = Double(stopThrottle) {
@@ -700,9 +766,24 @@ struct SystemSettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(competitionMode)
                     }
-//                    Text("(0.01)")
-//                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    // Send button for Stop Throttle
+                    Button(action: { sendStopThrottle() }) {
+                        if isSendingStopThrottle {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "arrow.up")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .frame(width: 32, height: 28)
+                    .disabled(competitionMode || isSendingStopThrottle || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
                 }
                 
                 // Default Speed (Double)
@@ -712,11 +793,12 @@ struct SystemSettingsView: View {
                     HStack(spacing: 4) {
                         Button("-") {
                             if let value = Double(defaultSpeed) {
-                                defaultSpeed = String(format: "%.4f", max(0, value - 0.01))
+                                defaultSpeed = String(format: "%.4f", max(0, value - 0.0001))
                             }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(competitionMode)
                         
                         TextField("Value", text: $defaultSpeed)
                             .textFieldStyle(.roundedBorder)
@@ -734,24 +816,41 @@ struct SystemSettingsView: View {
                                     defaultSpeed = filtered
                                 }
                             }
+                            .disabled(competitionMode)
+                            .opacity(competitionMode ? 0.5 : 1.0)
                         
                         Button("+") {
                             if let value = Double(defaultSpeed) {
-                                defaultSpeed = String(format: "%.4f", min(1, value + 0.01))
+                                defaultSpeed = String(format: "%.4f", min(1, value + 0.0001))
                             }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(competitionMode)
                     }
-//                    Text("(0.0001)")
-//                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    // Send button for Default Speed
+                    Button(action: { sendDefaultSpeed() }) {
+                        if isSendingDefaultSpeed {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "arrow.up")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .frame(width: 32, height: 28)
+                    .disabled(competitionMode || isSendingDefaultSpeed || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
                 }
                 
                 // Motor Offset (Double)
                 HStack {
                     Text("Motor Offset")
                         .frame(width: 120, alignment: .leading)
-                    HStack(spacing: 1) {
+                    HStack(spacing: 4) {
                         Button("-") {
                             if let value = Double(motorOffset) {
                                 motorOffset = String(format: "%.4f", max(-1, value - 0.001))
@@ -759,6 +858,7 @@ struct SystemSettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(competitionMode)
                         
                         TextField("Value", text: $motorOffset)
                             .textFieldStyle(.roundedBorder)
@@ -776,6 +876,8 @@ struct SystemSettingsView: View {
                                     motorOffset = filtered
                                 }
                             }
+                            .disabled(competitionMode)
+                            .opacity(competitionMode ? 0.5 : 1.0)
                         
                         Button("+") {
                             if let value = Double(motorOffset) {
@@ -784,30 +886,25 @@ struct SystemSettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(competitionMode)
                     }
-//                    Text("(0.001)")
-//                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    // Send button for Motor Offset
+                    Button(action: { sendMotorOffset() }) {
+                        if isSendingMotorOffset {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "arrow.up")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .frame(width: 32, height: 28)
+                    .disabled(competitionMode || isSendingMotorOffset || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
                 }
-                
-//                // Send Settings Button
-//                HStack {
-//                    Button("Send Settings") {
-//                        sendAllSettings()
-//                    }
-//                    .buttonStyle(.borderedProminent)
-//                    .disabled(isSending || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
-//                    
-//                    if isSending {
-//                        ProgressView()
-//                            .scaleEffect(0.8)
-//                    } else if let lastSend = lastSendTime, Date().timeIntervalSince(lastSend) < 2 {
-//                        Image(systemName: "checkmark.circle.fill")
-//                            .foregroundColor(.green)
-//                            .transition(.scale.combined(with: .opacity))
-//                    }
-//                }
-//                .frame(maxWidth: .infinity)
-//                .padding(.top, 8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -873,116 +970,125 @@ struct SystemSettingsView: View {
         motorOffset = String(format: "%.4f", coordinator.systemState.motorOffset)
     }
     
-    private func sendAllSettings() {
-        guard !isSending else { return }
+    // MARK: - Individual Send Functions
+    
+    private func sendCutoffFrequency() {
+        guard !isSendingCutoffFreq else { return }
+        guard let freq = Double(cutoffFrequency) else { return }
         
-        // Debug: Print current values before sending
-        print("=== Sending Settings ===")
-        print("Cutoff Frequency: \(cutoffFrequency)")
-        print("Max Consecutive NANs: \(maxConsecutiveNans)")
-        print("Launch Threshold Eps: \(launchThresholdEps)")
-        print("Launch Threshold N: \(launchThresholdN)")
-        print("Stop Throttle: \(stopThrottle)")
-        print("Default Speed: \(defaultSpeed)")
-        print("Motor Offset: \(motorOffset)")
-        print("=====================")
-        
-        isSending = true
-        focusedField = nil // Dismiss keyboard
+        isSendingCutoffFreq = true
+        focusedField = nil
         
         Task {
             defer { 
-                isSending = false
-                lastSendTime = Date()
+                isSendingCutoffFreq = false
             }
             
-            var successCount = 0
-            
-            // Send Cutoff Frequency
-            if let freq = Double(cutoffFrequency) {
-                do {
-                    print("Sending cutoff frequency: \(freq)")
-                    try await coordinator.setCutoffFrequency(freq)
-                    successCount += 1
-                    // Small delay between sends
-                    try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-                } catch {
-                    print("Failed to set cutoff frequency: \(error)")
-                }
-            } else {
-                print("Failed to parse cutoff frequency: '\(cutoffFrequency)'")
+            do {
+                try await coordinator.setCutoffFrequency(freq)
+            } catch {
+                print("Failed to set cutoff frequency: \(error)")
+            }
+        }
+    }
+    
+    private func sendMaxConsecutiveNans() {
+        guard !isSendingMaxNans else { return }
+        guard let maxNans = UInt8(maxConsecutiveNans) else { return }
+        
+        isSendingMaxNans = true
+        focusedField = nil
+        
+        Task {
+            defer { 
+                isSendingMaxNans = false
             }
             
-            // Send Max Consecutive NANs
-            if let maxNans = UInt8(maxConsecutiveNans) {
-                do {
-                    print("Sending max consecutive NANs: \(maxNans)")
-                    try await coordinator.setMaxConsecutiveNans(maxNans)
-                    successCount += 1
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                } catch {
-                    print("Failed to set max consecutive NANs: \(error)")
-                }
-            } else {
-                print("Failed to parse max consecutive NANs: '\(maxConsecutiveNans)'")
+            do {
+                try await coordinator.setMaxConsecutiveNans(maxNans)
+            } catch {
+                print("Failed to set max consecutive NANs: \(error)")
+            }
+        }
+    }
+    
+    private func sendLaunchThreshold() {
+        guard !isSendingLaunchThreshold else { return }
+        guard let eps = Double(launchThresholdEps), let n = UInt8(launchThresholdN) else { return }
+        
+        isSendingLaunchThreshold = true
+        focusedField = nil
+        
+        Task {
+            defer { 
+                isSendingLaunchThreshold = false
             }
             
-            // Send Launch Threshold
-            if let eps = Double(launchThresholdEps), let n = UInt8(launchThresholdN) {
-                do {
-                    print("Sending launch threshold: eps=\(eps), n=\(n)")
-                    try await coordinator.setLaunchThreshold(epsilon: eps, n: n)
-                    successCount += 1
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                } catch {
-                    print("Failed to set launch threshold: \(error)")
-                }
-            } else {
-                print("Failed to parse launch threshold: eps='\(launchThresholdEps)', n='\(launchThresholdN)'")
+            do {
+                try await coordinator.setLaunchThreshold(epsilon: eps, n: n)
+            } catch {
+                print("Failed to set launch threshold: \(error)")
+            }
+        }
+    }
+    
+    private func sendStopThrottle() {
+        guard !isSendingStopThrottle else { return }
+        guard let throttle = Double(stopThrottle) else { return }
+        
+        isSendingStopThrottle = true
+        focusedField = nil
+        
+        Task {
+            defer { 
+                isSendingStopThrottle = false
             }
             
-            // Send Stop Throttle
-            if let throttle = Double(stopThrottle) {
-                do {
-                    print("Sending stop throttle: \(throttle)")
-                    try await coordinator.setStopThrottle(throttle)
-                    successCount += 1
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                } catch {
-                    print("Failed to set stop throttle: \(error)")
-                }
-            } else {
-                print("Failed to parse stop throttle: '\(stopThrottle)'")
+            do {
+                try await coordinator.setStopThrottle(throttle)
+            } catch {
+                print("Failed to set stop throttle: \(error)")
+            }
+        }
+    }
+    
+    private func sendDefaultSpeed() {
+        guard !isSendingDefaultSpeed else { return }
+        guard let speed = Double(defaultSpeed) else { return }
+        
+        isSendingDefaultSpeed = true
+        focusedField = nil
+        
+        Task {
+            defer { 
+                isSendingDefaultSpeed = false
             }
             
-            // Send Default Speed
-            if let speed = Double(defaultSpeed) {
-                do {
-                    print("Sending default speed: \(speed)")
-                    try await coordinator.setDefaultSpeed(speed)
-                    successCount += 1
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                } catch {
-                    print("Failed to set default speed: \(error)")
-                }
-            } else {
-                print("Failed to parse default speed: '\(defaultSpeed)'")
+            do {
+                try await coordinator.setDefaultSpeed(speed)
+            } catch {
+                print("Failed to set default speed: \(error)")
+            }
+        }
+    }
+    
+    private func sendMotorOffset() {
+        guard !isSendingMotorOffset else { return }
+        guard let offset = Double(motorOffset) else { return }
+        
+        isSendingMotorOffset = true
+        focusedField = nil
+        
+        Task {
+            defer { 
+                isSendingMotorOffset = false
             }
             
-            // Send Motor Offset
-            if let offset = Double(motorOffset) {
-                do {
-                    print("Sending motor offset: \(offset)")
-                    try await coordinator.setMotorOffset(offset)
-                    successCount += 1
-                } catch {
-                    print("Failed to set motor offset: \(error)")
-                }
-            } else {
-                print("Failed to parse motor offset: '\(motorOffset)'")
+            do {
+                try await coordinator.setMotorOffset(offset)
+            } catch {
+                print("Failed to set motor offset: \(error)")
             }
-            
-            print("Successfully sent \(successCount) settings to server")
         }
     }
 }
@@ -993,15 +1099,17 @@ struct NumericInputRow: View {
     let value: Double
     let step: Double
     let range: ClosedRange<Double>
+    let competitionMode: Bool
     let onChange: (Double) -> Void
     @State private var textValue: String
     @FocusState private var isFocused: Bool
     
-    init(title: String, value: Double, step: Double, range: ClosedRange<Double>, onChange: @escaping (Double) -> Void) {
+    init(title: String, value: Double, step: Double, range: ClosedRange<Double>, competitionMode: Bool, onChange: @escaping (Double) -> Void) {
         self.title = title
         self.value = value
         self.step = step
         self.range = range
+        self.competitionMode = competitionMode
         self.onChange = onChange
         self._textValue = State(initialValue: String(format: "%.4f", value))
     }
@@ -1018,6 +1126,8 @@ struct NumericInputRow: View {
                 .font(.system(.body, design: .monospaced))
                 .frame(width: 90)
                 .focused($isFocused)
+                .disabled(competitionMode)
+                .opacity(competitionMode ? 0.5 : 1.0)
                 .onChange(of: textValue) { _, newValue in
                     // Filter to only allow numbers, decimal point, and minus sign
                     let allowedCharacters = CharacterSet(charactersIn: "0123456789.-")
@@ -1054,6 +1164,7 @@ struct NumericInputRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(competitionMode)
                 
                 Button("+") {
                     let newValue = min(value + step, range.upperBound)
@@ -1062,6 +1173,7 @@ struct NumericInputRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(competitionMode)
             }
         }
     }

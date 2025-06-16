@@ -15,103 +15,116 @@ struct ServerStateView: View {
                 Divider()
                 
                 // Horizontal layout with equal spacing
-                HStack(spacing: 0) {
-                    // Mode
-                    StateItemView(
-                        title: "Mode",
-                        value: serverModeText,
-                        color: serverModeColor
-                    )
-                    
-                    Divider()
-                    
-                    // Motor State
-                    StateItemView(
-                        title: "Motor",
-                        value: serverMotorStateText,
-                        color: serverMotorStateColor
-                    )
-                    
-                    Divider()
-                    
-                    // Found Offset
-                    StateItemView(
-                        title: "Offset",
-                        value: foundOffsetText,
-                        color: foundOffsetColor
-                    )
-                    
-                    Divider()
-                    
-                    // Interpolation
-                    StateItemView(
-                        title: "Interp",
-                        value: interpolationText,
-                        color: .primary
-                    )
-                    
-                    Divider()
-                    
-                    // Max NANs
-                    StateItemView(
-                        title: "Max NANs",
-                        value: maxNansText,
-                        color: .primary
-                    )
-                    
-                    Divider()
-                    
-                    // Threshold (N, EPS)
-                    GroupedStateItemView(
-                        title: "Threshold",
-                        value1: ("N", thresholdNText),
-                        value2: ("EPS", thresholdEpsText)
-                    )
-                    
-                    Divider()
-                    
-                    // Target (X, Y)
-                    GroupedStateItemView(
-                        title: "Target",
-                        value1: ("X", targetXText),
-                        value2: ("Y", targetYText)
-                    )
-                    
-                    Divider()
-                    
-                    // Stop Throttle
-                    StateItemView(
-                        title: "Stop Thr",
-                        value: stopThrottleText,
-                        color: .primary
-                    )
-                    
-                    Divider()
-                    
-                    // Motor Offset
-                    StateItemView(
-                        title: "Motor Off",
-                        value: motorOffsetText,
-                        color: .primary
-                    )
-                    
-                    Divider()
-                    
-                    // Default Speed
-                    StateItemView(
-                        title: "Def Speed",
-                        value: defaultSpeedText,
-                        color: .primary
-                    )
-                    
-                    Divider()
-                    
-                    // Cutoff Frequency
-                    StateItemView(
-                        title: "Cutoff",
-                        value: cutoffFrequencyText,
-                        color: .primary
-                    )
+                GeometryReader { geometry in
+                    HStack(spacing: 0) {
+                        // Mode
+                        StateItemView(
+                            title: "Mode",
+                            value: serverModeText,
+                            color: serverModeColor
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Motor State
+                        StateItemView(
+                            title: "Motor",
+                            value: serverMotorStateText,
+                            color: serverMotorStateColor
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Found Offset
+                        StateItemView(
+                            title: "Offset",
+                            value: foundOffsetText,
+                            color: foundOffsetColor
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Interpolation
+                        StateItemView(
+                            title: "Interp",
+                            value: interpolationText,
+                            color: .primary
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Max NANs
+                        StateItemView(
+                            title: "Max NANs",
+                            value: maxNansText,
+                            color: .primary
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Threshold (N, EPS)
+                        GroupedStateItemView(
+                            title: "Threshold",
+                            value1: ("N", thresholdNText),
+                            value2: ("EPS", thresholdEpsText)
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Target (X, Y)
+                        GroupedStateItemView(
+                            title: "Target",
+                            value1: ("X", targetXText),
+                            value2: ("Y", targetYText)
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Stop Throttle
+                        StateItemView(
+                            title: "Stop Thr",
+                            value: stopThrottleText,
+                            color: .primary
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Motor Offset
+                        StateItemView(
+                            title: "Motor Off",
+                            value: motorOffsetText,
+                            color: .primary
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Default Speed
+                        StateItemView(
+                            title: "Def Speed",
+                            value: defaultSpeedText,
+                            color: .primary
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                        
+                        Divider()
+                        
+                        // Cutoff Frequency
+                        StateItemView(
+                            title: "Cutoff",
+                            value: cutoffFrequencyText,
+                            color: .primary
+                        )
+                        .frame(width: geometry.size.width * 0.091) // 1/11
+                    }
                 }
                 .frame(maxHeight: .infinity)
             }
@@ -151,7 +164,7 @@ struct ServerStateView: View {
                 }
                 .frame(maxHeight: .infinity)
             }
-            .frame(maxWidth: 200, maxHeight: 90)
+            .frame(maxWidth: 240, maxHeight: 90)
             .background(Color(.systemGray6))
             .cornerRadius(10)
         }
@@ -168,8 +181,8 @@ struct ServerStateView: View {
         
         if let serverMode = coordinator.systemState.serverMode {
             switch serverMode {
-            case .manual: return "Manual"
-            case .autoAim: return "AutoAim"
+            case .manual: return "Man"
+            case .autoAim: return "AA"
             case .autonomous: return "Auto"
             }
         } else {
@@ -195,7 +208,7 @@ struct ServerStateView: View {
         guard isConnectedAndSynchronized else { return "N/A" }
         
         if let serverIsRunning = coordinator.systemState.serverIsRunning {
-            return serverIsRunning ? "Running" : "Stopped"
+            return serverIsRunning ? "Run" : "Stop"
         } else {
             return "N/A"
         }
@@ -265,7 +278,7 @@ struct ServerStateView: View {
         guard isConnectedAndSynchronized else { return "N/A" }
         
         if let serverValue = coordinator.systemState.serverMotorOffset {
-            return String(format: "%.2f", serverValue)
+            return String(format: "%.3f", serverValue)
         } else {
             return "N/A"
         }
@@ -453,6 +466,47 @@ struct GroupedStateItemView: View {
                         .fontWeight(.medium)
                 }
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 4)
+    }
+}
+
+
+struct GroupedStateItemView2: View {
+    let title: String
+    let value1: (label: String, value: String)
+    let value2: (label: String, value: String)
+    let value3: (label: String, value: String)
+    
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 2) {
+                Text("\(value1.label):")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                Text(value1.value)
+                    .font(.system(size: 10))
+                    .fontWeight(.medium)
+            }
+            
+            HStack(spacing: 2) {
+                Text("\(value2.label):")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                Text(value2.value)
+                    .font(.system(size: 10))
+                    .fontWeight(.medium)
+            }
+            HStack(spacing: 2) {
+                Text("\(value3.label):")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                Text(value3.value)
+                    .font(.system(size: 10))
+                    .fontWeight(.medium)
+            }
+
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 4)

@@ -54,23 +54,6 @@ struct NCameraView: View {
                         color: .green
                     )
                 }
-                
-                // Info overlay
-                VStack {
-                    HStack {
-                        CameraInfoView()
-                        Spacer()
-                    }
-                    Spacer()
-                    
-                    // Error info at bottom left
-                    HStack {
-                        ErrorInfoView()
-                        Spacer()
-                    }
-                }
-                .frame(width: viewSize.width, height: viewSize.height)
-                .padding()
             }
             .frame(width: viewSize.width, height: viewSize.height)
             .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
@@ -457,12 +440,27 @@ struct CameraInfoView: View {
 struct YOffsetControlView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
+    let competitionMode: Bool
     
     var body: some View {
         VStack(spacing: 8) {
             Text("Y Offset")
                 .font(.caption)
                 .fontWeight(.medium)
+            
+            // Competition mode warning
+            if competitionMode {
+                HStack {
+                    Image(systemName: "lock.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption2)
+                    Text("Locked")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+                .padding(.vertical, 2)
+            }
+            
             VStack(spacing:4){
                 HStack(spacing: 20) {
                     Button("-") {
@@ -470,18 +468,14 @@ struct YOffsetControlView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(!coordinator.connectionState.isConnected)
-                    
-//                    Text(String(format: "%.3f", settingsStore.targetOffsetY))
-//                        .font(.system(size: 10, design: .monospaced))
-//                        .frame(width: 40)
+                    .disabled(competitionMode || !coordinator.connectionState.isConnected)
                     
                     Button("+") {
                         settingsStore.targetOffsetY = min(0.2, settingsStore.targetOffsetY + 0.001)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(!coordinator.connectionState.isConnected)
+                    .disabled(competitionMode || !coordinator.connectionState.isConnected)
                 }
                 Text(String(format: "%.3f", settingsStore.targetOffsetY))
                     .font(.system(size: 15, design: .monospaced))
@@ -498,6 +492,7 @@ struct YOffsetControlView: View {
                 .frame(width: geometry.size.height, height: 40)
                 .rotationEffect(.degrees(-90))
                 .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                .disabled(competitionMode)
             }
             .frame(width: 40)
             .clipped()
@@ -516,7 +511,7 @@ struct YOffsetControlView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGray6))
         .cornerRadius(10)
-        .opacity(coordinator.connectionState.isConnected ? 1.0 : 0.6)
+        .opacity(coordinator.connectionState.isConnected ? (competitionMode ? 0.5 : 1.0) : 0.6)
     }
 }
 
@@ -524,15 +519,30 @@ struct YOffsetControlView: View {
 struct XOffsetControlView: View {
     @EnvironmentObject var coordinator: ControlCoordinator
     @EnvironmentObject var settingsStore: SettingsStore
+    let competitionMode: Bool
     
     var body: some View {
         HStack(spacing: 20) {
             // Title
-            Text("X Offset\nControl")
-                .font(.system(size: 14, weight: .medium))
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-                .frame(width: 60)
+            VStack {
+                Text("X Offset\nControl")
+                    .font(.system(size: 14, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .frame(width: 60)
+                
+                // Competition mode warning
+                if competitionMode {
+                    HStack {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption2)
+                        Text("Locked")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
             
             // X Offset slider
             VStack(spacing: 8) {
@@ -546,21 +556,21 @@ struct XOffsetControlView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(!coordinator.connectionState.isConnected)
+                    .disabled(competitionMode || !coordinator.connectionState.isConnected)
                     
                     Slider(
                         value: $settingsStore.targetOffsetX,
                         in: -0.2...0.2,
                         step: 0.001
                     )
-                    .disabled(!coordinator.connectionState.isConnected)
+                    .disabled(competitionMode || !coordinator.connectionState.isConnected)
                     
                     Button("+") {
                         settingsStore.targetOffsetX = min(0.2, settingsStore.targetOffsetX + 0.001)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(!coordinator.connectionState.isConnected)
+                    .disabled(competitionMode || !coordinator.connectionState.isConnected)
                     
                     Text(String(format: "%.3f", settingsStore.targetOffsetX))
                         .frame(width: 80)
@@ -572,8 +582,6 @@ struct XOffsetControlView: View {
                     .foregroundColor(.secondary)
                 }
             
-//                .frame(maxWidth: .infinity)
-            
             // Buttons - horizontal layout
             HStack(spacing: 12) {
                 Button("Reset") {
@@ -582,7 +590,7 @@ struct XOffsetControlView: View {
                 }
                 .buttonStyle(.bordered)
                 .frame(width: 80, height: 36)
-                .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
+                .disabled(competitionMode || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
                 
                 Button("Send") {
                     Task {
@@ -595,14 +603,14 @@ struct XOffsetControlView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .frame(width: 80, height: 36)
-                .disabled(!coordinator.connectionState.isConnected || !coordinator.isSynchronized)
+                .disabled(competitionMode || !coordinator.connectionState.isConnected || !coordinator.isSynchronized)
             }
         }
         .padding()
         .frame(maxWidth: .infinity)
         .background(Color(.systemGray6))
         .cornerRadius(10)
-        .opacity(coordinator.connectionState.isConnected ? 1.0 : 0.6)
+        .opacity(coordinator.connectionState.isConnected ? (competitionMode ? 0.5 : 1.0) : 0.6)
     }
 }
 
