@@ -2,92 +2,97 @@
 
 ## Overview
 
-This is an enhanced version of the ME400 Control Swift client with improved architecture, better separation of concerns, and modern Swift patterns.
+ME400 Control – Enhanced Swift Client is a modern, modular Swift application for managing and monitoring the ME400 system with robust networking, strict protocol handling, thread-safe state management, and a responsive SwiftUI interface.
 
 ## Architecture
 
 ### Core Components
 
 1. **NProtocol.swift**
-   - Defines the communication protocol with type-safe packet structures
-   - Includes all packet types, payloads, and encoding/decoding logic
-   - Provides factory methods for creating packets
+   - Defines the binary communication protocol in a type-safe manner
+   - Implements all packet types, enums, payloads, and encoding/decoding logic
+   - Ensures strict endianness requirements (little-endian)
+   - Provides factory methods for constructing protocol packets
 
 2. **NNetworkManager.swift**
-   - Handles all network communication using Apple's Network framework
-   - Implements automatic reconnection, keepalive, and timeout handling
-   - Uses Combine for reactive state updates
-   - Includes mock implementation for testing
+   - Encapsulates all network I/O using Apple’s Network framework
+   - Implements automatic reconnection, keepalive handling, and connection timeouts
+   - Publishes connection and error state via Combine publishers
+   - Includes a `MockNetworkManager` conforming to the same interface for testing
 
 3. **NSystemStateManager.swift**
-   - Manages the application's state in a centralized, thread-safe manner
-   - Processes incoming packets and updates state accordingly
-   - Publishes state changes using Combine
+   - Maintains application system state in a central, thread-safe manner
+   - Applies updates from incoming protocol packets
+   - Publishes state changes using Combine for real-time UI and logic updates
+   - Clearly separates network state (connection) from system state (model data)
 
 4. **NControlCoordinator.swift**
-   - Coordinates between network and state management
-   - Provides high-level control methods with async/await
-   - Handles connection lifecycle and error propagation
+   - Bridges the network and system state layers
+   - Provides async/await APIs for all control commands and configuration
+   - Manages connection life cycle and error propagation
+   - Coordinates dependency injection for testability and modularity
 
 ### UI Components
 
 1. **NME400App.swift**
-   - Main app entry point with dependency injection
-   - Manages app-wide settings using `@AppStorage`
+   - SwiftUI app entry point
+   - Sets up dependency injection and app storage using `@AppStorage`
+   - Configures global state and mock/testing modes
 
 2. **NContentView.swift**
-   - Main content view with clean layout
-   - Header with connection status and system controls
-   - Split view with control panel and visualization area
+   - Main UI dashboard
+   - Displays connection status and system controls in a prominent header
+   - Presents a flexible split view for control panels and live visualization
 
 3. **NControlViews.swift**
-   - Mode-specific control views (Manual, AutoAim, Autonomous)
-   - Reusable control components
-   - System information display
+   - Contains all mode-specific control panels (Manual, AutoAim, Autonomous)
+   - Houses reusable UI logic and system diagnostics
+   - Displays real-time system information and feedback
 
 4. **NSettingsView.swift**
-   - Configuration for connection, PID parameters, and scene settings
-   - Persistent storage of user preferences
+   - Presents configuration for connection parameters, PID values, and scene settings
+   - Persists user preferences using app storage
 
 ## Key Improvements
 
-### 1. Protocol Definition
-- Type-safe packet definitions with proper enums
-- Consistent endianness handling (little-endian)
-- Clear separation between packet types and payloads
+### Protocol Layer
+- All packets and payloads defined with precise Swift enums and structs
+- Endianness and wire format strictly enforced
+- Factory API for safe packet construction
 
-### 2. Network Layer
-- Proper error handling with typed errors
-- Automatic reconnection with configurable attempts
-- Connection timeout and keepalive support
-- Async/await API for cleaner code
+### Network Layer
+- Typed error reporting and propagation
+- Configurable automatic reconnection and keepalive intervals
+- Connection state published reactively with Combine
+- Full async/await command support
+- Mock network manager included
 
-### 3. State Management
-- Centralized state with thread-safe updates
-- Reactive updates using Combine
-- Clear separation between network state and system state
+### State Management
+- Centralized, thread-safe state with single source of truth
+- Real-time updates via Combine publishers
+- Strong separation of network/transport from system model
 
-### 4. Architecture
-- Protocol-oriented design for testability
-- Dependency injection throughout
-- Mock implementations for testing
-- Clear separation of concerns
+### Architecture
+- Protocol-oriented for maximum testability
+- Complete dependency injection for all major components
+- Dedicated mocks for isolated testing
+- UI and business logic are fully decoupled
 
-### 5. UI/UX
-- Modern SwiftUI patterns
-- Responsive layout
-- Clear visual feedback for connection status
-- Organized settings and controls
+### UI/UX
+- Modular SwiftUI views with clean, responsive layouts
+- Explicit feedback for connection and system state
+- Persistent settings and mode switching
+- Organized controls for each system mode
 
 ## Usage
 
-### Basic Setup
+### Initialization
 
 ```swift
-// Create coordinator with default configuration
+// Default initialization
 let coordinator = ControlCoordinatorFactory.create()
 
-// Or with custom configuration
+// Custom network configuration
 let config = NetworkConfiguration(
     host: "192.168.1.100",
     port: 12345,
@@ -97,81 +102,3 @@ let config = NetworkConfiguration(
     keepaliveInterval: 5
 )
 let coordinator = ControlCoordinatorFactory.create(configuration: config)
-```
-
-### Sending Commands
-
-```swift
-// All commands use async/await
-Task {
-    // Control commands
-    try await coordinator.sendServoCommand(pitch: 0.5, yaw: -0.3)
-    try await coordinator.sendESCCommand(0.7)
-    try await coordinator.sendTriggerCommand(true)
-    
-    // System control
-    try await coordinator.start()
-    try await coordinator.stop()
-    try await coordinator.setMode(.autoAim)
-    
-    // PID tuning
-    try await coordinator.tunePitch(p: 10.0, i: 0.5)
-    try await coordinator.setPitchIntegralLimit(1.0)
-}
-```
-
-### Observing State
-
-```swift
-// In SwiftUI views
-struct MyView: View {
-    @EnvironmentObject var coordinator: ControlCoordinator
-    
-    var body: some View {
-        VStack {
-            // Connection state
-            if coordinator.connectionState.isConnected {
-                Text("Connected")
-            }
-            
-            // System state
-            Text("Mode: \(coordinator.systemState.drivingMode.displayName)")
-            Text("Running: \(coordinator.systemState.isRunning ? "Yes" : "No")")
-            
-            // Bounding box
-            if let bbox = coordinator.systemState.boundingBox {
-                Text("Target at: \(bbox.centerX), \(bbox.centerY)")
-            }
-        }
-    }
-}
-```
-
-## Testing
-
-The architecture supports easy testing with mock implementations:
-
-```swift
-// Create mock coordinator for testing
-let mockCoordinator = ControlCoordinatorFactory.createMock()
-
-// Mock network manager simulates connection and data
-let mockNetwork = MockNetworkManager()
-```
-
-## Migration from Original Code
-
-1. Replace `ServerCommunicationManager.shared` with `ControlCoordinator`
-2. Replace `ParameterManager.shared` with `coordinator.systemState`
-3. Update packet creation to use `PacketFactory` methods
-4. Convert completion handlers to async/await
-5. Use `@EnvironmentObject` for dependency injection
-
-## Future Enhancements
-
-1. Add unit tests for all components
-2. Implement data persistence for offline mode
-3. Add analytics and logging
-4. Create reusable UI component library
-5. Add protocol versioning support
-6. Implement secure authentication 
